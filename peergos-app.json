@@ -1,0 +1,15 @@
+{
+    "schemaVersion": "1",
+    "displayName": "Ludo4Peergos",
+    "name": "ludo4peergos",
+    "description": "Ludo – play against the computer or with your Peergos friends",
+    "version": "0.1.0",
+    "author": "anderlejan",
+    "launchable": true,
+    "folderAction": false,
+    "appIcon": "icon.png",
+    "fileExtensions": [],
+    "mimeTypes": [],
+    "fileTypes": [],
+    "permissions": ["STORE_APP_DATA", "EXCHANGE_MESSAGES_WITH_FRIENDS"]
+}

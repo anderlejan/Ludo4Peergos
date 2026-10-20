@@ -1,0 +1,9 @@
+# build output and local-only material
+/releases/
+/dist/
+__pycache__/
+*.pyc
+node_modules/
+tests/usernotes/
+.claude/
+_local/
