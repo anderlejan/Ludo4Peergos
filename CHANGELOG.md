@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.0 – test feedback round 1
+- Rules can no longer change during a game: each game keeps its own rules and speed. While a game is open,
+  Settings shows them read-only ("locked – belongs to this game"); new games take them from Settings.
+- New rule (off by default): **one token per square** – landing on your own token sends that token back to the yard,
+  also when a new token enters on its start square. A possible move must still be made. The computer avoids it.
+- Main menu: every saved game shows how it was set up – players with computer levels, your colour, speed, rules in
+  short (differences from the standard rules), round and wins. The same summary is in the game ("This game").
+- **New round** with the same players, rules and speed without leaving the game – after it ends or during it
+  (asks first). Online, any player can ask; everyone still playing has to agree, then the host's app starts it in
+  the same chat (the chat stays, with "Round N" marks). Wins per colour are counted across rounds.
+- Yellow is a clearer yellow in all themes (darker shades amber instead of olive), easier to tell from green.
+- Game layout: players, die and moves on the left, the board in the middle, the online chat on the right.
+- Slower, easier to follow play: every speed takes twice as long as before (0.1.0), a banner on the board says whose
+  turn it is ("Your turn!", "Green's turn", "Roll again"), and the active player's yard glows. The speed is chosen per
+  game (New game dialog) and cannot change while the game runs.
+- Full screen: the button is off by default and only offered where the browser allows it. Inside Peergos it cannot
+  work – Peergos does not give apps the full-screen permission (checked with Peergos 1.39); use the browser's F11.
+- Quick game: pick 1, 2 or 3 computer opponents right on the card (the first sits opposite you); it uses your saved
+  level, speed and rules.
+- How to play is written from the rules of the open game (or, in the menu, from the rules for new games).
+- Online protocol 2: games started by 0.2.0 ask 0.1.0 players to update; 0.2.0 still plays 0.1.0 games.
+
 ## 0.1.0 – first test version
 - Classic Ludo for 2–4 players: you against the computer (Easy, Normal, Hard – any number of computer players),
   several people on one device, or online with Peergos friends.

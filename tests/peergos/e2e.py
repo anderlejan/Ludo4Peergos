@@ -24,6 +24,7 @@ ap.add_argument('--zip', required=True)
 ap.add_argument('--users', nargs=2, default=['alice', 'bob'])
 ap.add_argument('--password', default='testpassword')
 ap.add_argument('--shots')
+ap.add_argument('--previous-zip', help='install this older release first, so the test zip is installed as an upgrade')
 ap.add_argument('--headed', action='store_true')
 A = ap.parse_args()
 failures = []
@@ -90,10 +91,10 @@ def goto_view(page, label, method, handle):
     raise RuntimeError('view ' + label + ' never appeared')
 
 
-def install_from_zip(page, user):
+def install_from_zip(page, user, zipname=None):
     goto_view(page, 'Drive', 'downloadFile', '__drive')
     wait(lambda: page.evaluate("window.__drive.currentDir && !window.__drive.showSpinner"), 'drive listing', 180)
-    path = '/%s/apps/%s' % (user, os.path.basename(A.zip))
+    path = '/%s/apps/%s' % (user, os.path.basename(zipname or A.zip))
     page.evaluate("p => window.__drive.changePath(p)", path)
     wait(lambda: page.evaluate("!!window.__drive.archive && !window.__drive.showSpinner && window.__drive.files.some(f => f.getName() === 'peergos-app.json')"), 'the archive listing', 180)
     shot(page, 'install-1-archive-' + user)
@@ -156,6 +157,9 @@ def main():
         print('1. sign in and install from the ZIP', flush=True)
         for u in (alice, bob):
             login(pages[u], u)
+            if A.previous_zip:
+                install_from_zip(pages[u], u, A.previous_zip)
+                ok('previous version installed for ' + u, True)
             install_from_zip(pages[u], u)
             ok('installed for ' + u, True)
 
@@ -165,6 +169,15 @@ def main():
         ok('cross-origin isolated sandbox', fa.evaluate('window.crossOriginIsolated') is True)
         ok('running inside Peergos (data + chat available)', fa.evaluate('L4P.Storage.PEERGOS && L4P.Net.available') is True)
         ok('username passed in', fa.evaluate('L4P.Storage.username') == alice)
+        ok('the installed app is the tested version', fa.evaluate('L4P.VERSION') == json.load(open(os.path.join(os.path.dirname(__file__), '..', '..', 'peergos-app.json')))['version'])
+        fs = fa.evaluate("({ok: L4P.App.FULLSCREEN_OK, enabled: document.fullscreenEnabled, hidden: document.getElementById('btn-full').hidden})")
+        ok('full screen is not allowed for apps in Peergos; the button stays hidden', fs['ok'] is False and fs['enabled'] is False and fs['hidden'] is True, fs)
+        try:
+            fa.evaluate("document.documentElement.requestFullscreen()")
+            ok('requestFullscreen is refused inside the sandbox', False, 'it was accepted')
+        except Exception as e:
+            ok('requestFullscreen is refused inside the sandbox', True)
+            print('    (refusal: %s)' % str(e).splitlines()[0][:160], flush=True)
         shot(a, 'app-1-home')
 
         print('3. settings saved to the data folder and restored', flush=True)
@@ -245,8 +258,21 @@ def main():
         sb = fb.evaluate("JSON.stringify(L4P.App.game.state.tokens) + ' n=' + L4P.App.game.state.n + ' over=' + L4P.App.game.state.over")
         ok('the game ended on both sides', 'over=true' in sa and 'over=true' in sb, sa + ' / ' + sb)
         ok('both sides have the same final state', sa == sb, sa + ' / ' + sb)
-        ok('bob\'s chat line reached alice', 'Hello from bob' in fa.inner_text('.side'))
+        ok('bob\'s chat line reached alice', 'Hello from bob' in fa.inner_text('.side-right'))
         shot(a, 'game-6-alice-end')
+        print('7. new round in the same chat (bob asks, alice agrees, her app starts it)', flush=True)
+        wait(lambda: fb.evaluate("!!document.getElementById('btn-rematch')"), 'the winner dialog for bob', 30)
+        fb.evaluate("document.getElementById('btn-rematch').click()")
+        wait(lambda: fa.evaluate("!!document.getElementById('btn-agree')"), 'alice to be asked', 120)
+        shot(a, 'game-7-alice-asked')
+        fa.evaluate("document.getElementById('btn-agree').click()")
+        wait(lambda: fa.evaluate('L4P.App.game.replay.rounds.length') == 2 and fb.evaluate('L4P.App.game.replay.rounds.length') == 2, 'round 2 on both sides', 180)
+        ok('round 2 started on both sides', True)
+        ok('chat kept across rounds', 'Hello from bob' in fb.inner_text('.side-right') and 'Round 2' in fb.inner_text('.side-right'))
+        fa.evaluate("document.getElementById('btn-game-rules').click()")
+        ok('How to play shows the rules of this game', 'Rules of this game' in fa.inner_text('.dlg-help'))
+        shot(a, 'game-8-rules')
+        fa.evaluate("UI_close = document.querySelector('.dlg-help .dlg-close'); UI_close && UI_close.click()")
         shot(b, 'game-6-bob-end')
         for u in (alice, bob):
             ok('no app script errors for ' + u, not errors[u], errors[u][:5])

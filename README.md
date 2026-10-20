@@ -3,13 +3,18 @@
 The classic race game **Ludo** as a [Peergos](https://peergos.org) custom app – private, end-to-end encrypted,
 and running entirely inside your own Peergos space.
 
-- **Play against the computer** – one to three computer players (Easy, Normal, Hard).
+- **Play against the computer** – one to three computer players (Easy, Normal, Hard). *Quick game* starts at once
+  with 1, 2 or 3 opponents and your saved level, speed and rules.
 - **Play on one device** – several people taking turns at the same screen.
 - **Play online with your Peergos friends** – up to four players, and computer players can join online games too.
   Moves travel as messages in a Peergos app chat, so they are end-to-end encrypted like every Peergos chat.
-- 12 colour themes (10 dark, 2 light) or "Follow Peergos", glossy or flat tokens, four animation speeds.
+- 12 colour themes (10 dark, 2 light) or "Follow Peergos", glossy or flat tokens, four game speeds, a banner and a
+  glowing yard that show whose turn it is.
 - House rules: leave the yard with a 6 or 1/6, bonus rolls for sixes, captures and reaching home, third six ends the
-  turn, safe squares, three tries, play on for all places.
+  turn, safe squares, three tries, one token per square, play on for all places. Each game keeps its own rules and
+  speed; *How to play* shows the rules of the game you are in.
+- **New round** with the same players, rules and speed, without leaving the game; wins are counted across rounds.
+- The main menu shows how every game was set up (players, your colour, speed, rules in short, round).
 - Settings are saved the moment you change them, in the app's private Peergos folder, so they follow you to every
   device. Games against the computer are saved after every move.
 - English and Czech.
@@ -40,8 +45,11 @@ Good to know:
 - Only Peergos friends can be invited.
 - Computer players in an online game are played by the host's app – keep it open while they are on turn.
 - A player who has to leave can **Hand over to the computer**; the host's app then plays their colour.
-- After a game the host can press **Play again**; it opens for everyone in the same chat.
+- **New round**: any player can ask for one (during or after a game). When everyone still playing agrees, the
+  host's app starts it in the same chat – the chat history stays.
 - Each player rolls on their own device – the game trusts its players, which is fine among friends.
+
+Full screen: Peergos does not give apps the full-screen permission, so use your browser's own full screen (F11).
 
 ## Privacy and security
 

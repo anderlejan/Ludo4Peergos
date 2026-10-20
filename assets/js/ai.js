@@ -37,6 +37,9 @@
     let s = 0;
     const caps = R.capturesAt(state, c, to);
     for (const [oc, j] of caps) s += 120 + state.tokens[oc][j] * 1.6; // hurting an advanced token is worth more
+    if (state.rules.selfKick && to < R.FINISH) {
+      for (let j = 0; j < 4; j++) if (j !== token && state.tokens[c][j] === to) s -= 75 + to * 1.6; // would send our own token home
+    }
     if (from === -1) s += 70;
     if (to === R.FINISH) s += 90;
     else if (to > R.LAST_TRACK && from <= R.LAST_TRACK) s += 55;     // into the home column: safe for good

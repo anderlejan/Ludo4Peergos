@@ -244,4 +244,103 @@ test('protocol: a newer setup from the host starts a new game (rematch)', () => 
   assert.strictEqual(rep.setup.g, 'G2'); assert.strictEqual(rep.state.n, 0); assert.strictEqual(rep.state.turn, 2);
 });
 
+test('rule selfKick: landing on your own token sends it to the yard (also entering on your start)', () => {
+  let s = R.newGame(Object.assign(four(), { rules: { selfKick: true } }));
+  s.tokens[0] = [0, -1, -1, 3];
+  let res = R.apply(s, { r: 6, t: 1 });             // enter on start where token 0 stands
+  assert.deepStrictEqual(res.state.tokens[0], [-1, 0, -1, 3]);
+  assert.ok(res.events.some(e => e.type === 'selfCapture' && e.token === 0));
+  s.tokens[0] = [5, 8, -1, -1];
+  res = R.apply(s, { r: 3, t: 0 });                 // 5 + 3 lands on 8
+  assert.deepStrictEqual(res.state.tokens[0], [8, -1, -1, -1]);
+  // without the rule tokens share the square
+  const s2 = R.newGame(four());
+  s2.tokens[0] = [5, 8, -1, -1];
+  assert.deepStrictEqual(R.apply(s2, { r: 3, t: 0 }).state.tokens[0], [8, 8, -1, -1]);
+  // the move stays compulsory when it is the only one ("the one that is free to go must go")
+  const s3 = R.newGame(Object.assign(four(), { rules: { selfKick: true } }));
+  s3.tokens[0] = [5, 8, 56, 56];
+  assert.deepStrictEqual(R.legalMoves(s3, 3), [0, 1]);
+  s3.tokens[0] = [5, 56, 56, 56];
+  assert.deepStrictEqual(R.legalMoves(s3, 3), [0]);
+});
+
+test('AI avoids sending its own token home when it has another move', () => {
+  const s = R.newGame(Object.assign(four(), { rules: { selfKick: true } }));
+  s.tokens[0] = [5, 8, 20, -1];
+  // token 0 + 3 would land on token 1; token 2 is free to move
+  for (const lv of ['normal', 'hard']) assert.notStrictEqual(AI.choose(s, 3, lv, rng(3)), 0, lv);
+});
+
+test('selfKick games still finish (500 bot games)', () => {
+  const rnd = rng(4242);
+  for (let g = 0; g < 500; g++) {
+    let s = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('normal')], rules: { selfKick: true } });
+    let steps = 0;
+    while (!s.over) { const r = 1 + Math.floor(rnd() * 6); s = R.apply(s, { r, t: AI.choose(s, r, s.seats[s.turn].level, rnd) }).state; if (++steps > 6000) throw new Error('no end'); }
+  }
+});
+
+test('normalizeRules keeps the new option and ignores junk', () => {
+  assert.strictEqual(R.normalizeRules({ selfKick: 1 }).selfKick, true);
+  assert.strictEqual(R.normalizeRules({}).selfKick, false);
+  assert.ok(!('evil' in R.normalizeRules({ evil: true })));
+});
+
+function enc(author, kind, fields) { return { author, text: P.encode(P.msg(kind, fields, 'test')) }; }
+
+test('protocol: new round needs every active human to agree; the host then starts it', () => {
+  const seats = [{ kind: 'human', user: 'alice' }, { kind: 'human', user: 'bob' }, { kind: 'bot', level: 'easy' }, null];
+  const e = [enc('alice', 'setup', { g: 'G1', seats, first: 0, round: 1 })];
+  e.push(enc('alice', 'move', { g: 'G1', n: 0, c: 0, r: 2, t: -1 }));
+  e.push(enc('bob', 'restartAsk', { g: 'G1', id: 'ask1' }));
+  // P.msg makes its own id: fix the ask id so votes can refer to it
+  const askMsg = P.decode(e[2].text); askMsg.id = 'ask1'; e[2].text = P.encode(askMsg);
+  let rep = P.replay(e, 'alice');
+  assert.ok(rep.restart && !rep.restart.complete && rep.restart.author === 'bob');
+  assert.deepStrictEqual(rep.restart.needed.sort(), ['alice', 'bob']);
+  e.push(enc('alice', 'restartVote', { g: 'G1', ask: 'ask1', yes: true }));
+  rep = P.replay(e, 'alice');
+  assert.ok(rep.restart.complete);
+  // a "no" closes the question
+  const declined = e.slice(0, 3).concat([enc('alice', 'restartVote', { g: 'G1', ask: 'ask1', yes: false })]);
+  const rd = P.replay(declined, 'alice');
+  assert.ok(!rd.restart.complete && rd.restart.declinedBy === 'alice');
+  // someone outside the game cannot vote or ask
+  const outsider = e.slice(0, 3).concat([enc('eve', 'restartVote', { g: 'G1', ask: 'ask1', yes: true })]);
+  assert.ok(!P.replay(outsider, 'alice').restart.complete);
+  // the host starts round 2 in the same chat; round 1 stays in the results, chat lines stay
+  e.push(enc('bob', 'say', { g: 'G1', text: 'gg' }));
+  e.push(enc('alice', 'setup', { g: 'G2', seats, first: 1, round: 2, ask: 'ask1' }));
+  rep = P.replay(e, 'alice');
+  assert.strictEqual(rep.setup.g, 'G2'); assert.strictEqual(rep.state.n, 0); assert.strictEqual(rep.state.turn, 1);
+  assert.strictEqual(rep.rounds.length, 2); assert.strictEqual(rep.rounds[1].round, 2);
+  assert.strictEqual(rep.restart, null);
+  assert.strictEqual(rep.says.length, 1);
+});
+
+test('protocol: a player who handed over to the computer is not asked', () => {
+  const seats = [{ kind: 'human', user: 'alice' }, { kind: 'human', user: 'bob' }, null, null];
+  const e = [enc('alice', 'setup', { g: 'G', seats, first: 0 }), enc('bob', 'resign', { g: 'G', c: 1, after: 0 }), enc('alice', 'restartAsk', { g: 'G' })];
+  const rep = P.replay(e, 'alice');
+  assert.deepStrictEqual(rep.restart.needed, ['alice']);
+  assert.ok(rep.restart.complete);
+});
+
+test('protocol: results of every round are kept', () => {
+  const { entries } = onlineGame(11);
+  const s2 = P.msg('setup', { g: 'G2', seats: [{ kind: 'human', user: 'alice' }, null, { kind: 'human', user: 'bob' }, null], first: 0, round: 2 });
+  const rep = P.replay(entries.concat([{ author: 'alice', text: P.encode(s2) }]), 'alice');
+  assert.strictEqual(rep.rounds.length, 2);
+  assert.ok(rep.rounds[0].over && rep.rounds[0].winner != null);
+  assert.ok(!rep.rounds[1].over);
+});
+
+test('protocol: messages of a newer protocol are counted, not applied', () => {
+  const m = P.msg('setup', { g: 'X', seats: [{ kind: 'human', user: 'a' }, { kind: 'bot' }, null, null] });
+  m.v = P.PROTOCOL + 1;
+  const rep = P.replay([{ author: 'a', text: P.encode(m) }], 'a');
+  assert.strictEqual(rep.unknown, 1); assert.strictEqual(rep.setup, null);
+});
+
 console.log((process.exitCode ? 'FAILED' : 'OK') + ' – ' + passed + ' tests passed');

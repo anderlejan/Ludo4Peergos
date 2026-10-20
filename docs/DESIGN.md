@@ -34,6 +34,9 @@ tools/make_release.py   builds releases/Ludo4Peergos-v<ver>.zip + source zip, ch
 - A capture and a token reaching home also give another roll.
 - Home needs the exact number. The game ends when the first player has all four tokens home
   (option: play on for all places).
+- Option `selfKick` (off by default): one token per square – landing on your own token sends that token to the yard.
+- Rules and speed belong to the game (`setup.rules`, `setup.speed`) and never change while it runs; Settings only
+  holds the defaults for new games.
 
 Positions: `-1` = yard, `0..50` = main track relative to the colour's start square, `51..55` = home column,
 `56` = home (finished). Track cell of a token = `(START[colour] + rel) % 52`.
@@ -44,10 +47,12 @@ Text of each chat message: `L4P1 ` + base64url(UTF-8 JSON). JSON always has `v` 
 
 | kind | sent by | fields |
 |---|---|---|
-| `setup` | host (chat owner) | `seats[4]` (`null` or `{kind:'human'|'bot', user, level, name}`), `rules`, `first` |
+| `setup` | host (chat owner) | `seats[4]` (`null` or `{kind:'human'|'bot', user, level, name}`), `rules`, `first`, `speed`, `round`, `ask` (the new-round question it answers) |
 | `move` | the player whose turn it is (host for computer seats) | `n` (move number), `c` (colour), `r` (roll), `t` (token or -1) |
 | `resign` | a human player | `c`, `after` (their move counter when resigning) |
 | `say` | anyone | `text` (short chat line / emoji) |
+| `restartAsk` | a human player | asks for a new round of the current game `g` |
+| `restartVote` | a human player | `ask` (id of the question), `yes` (false closes the question) |
 
 Replay (`Protocol.replay`): the current game is the last `setup` from the host (each author's messages keep their
 order in every member's copy). Moves of that game are applied in move-number order: move `n` is accepted only when
@@ -55,6 +60,12 @@ the state is at `n`, the colour is to play, the author controls that seat and th
 arrive early wait in a pool. Because only one author can ever make move `n`, the result does not depend on the
 order in which Peergos merges the members' logs. A resigned seat is played by the host's computer from move
 `after` on. The roller rolls on their own device (crypto random) – fine among friends.
+
+New round: when every human player who still plays himself (not handed over) has agreed (the asker counts as yes),
+the host's app sends a new `setup` with the same seats, rules and speed, `round + 1` and `ask` = the question's id; it
+checks first that no setup for that question exists. Every round of the chat is replayed (`rounds`: results, wins).
+Protocol version 2 (app 0.2.0) added `speed`, `round`, `ask`, the restart messages and the rule `selfKick`; a 0.1.0 app
+ignores protocol-2 messages and asks its user to update.
 
 Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns.
 

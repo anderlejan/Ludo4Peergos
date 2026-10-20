@@ -49,9 +49,11 @@
     el('rect', { x: 0, y: 0, width: 150, height: 150, rx: 5, class: 'b-base' }, svg);
 
     // yards
+    const yards = [], yardGlow = [];
     for (let c = 0; c < 4; c++) {
       const [x, y] = R.YARD[c];
-      el('rect', { x: x * U + 1.2, y: y * U + 1.2, width: 57.6, height: 57.6, rx: 6, fill: 'url(#yard' + c + ')', class: 'b-yard' }, svg);
+      yardGlow[c] = el('rect', { x: x * U + 0.2, y: y * U + 0.2, width: 59.6, height: 59.6, rx: 7, class: 'b-yard-glow', style: { stroke: pv(c) } }, svg);
+      yards[c] = el('rect', { x: x * U + 1.2, y: y * U + 1.2, width: 57.6, height: 57.6, rx: 6, fill: 'url(#yard' + c + ')', class: 'b-yard' }, svg);
       el('rect', { x: x * U + 9, y: y * U + 9, width: 42, height: 42, rx: 5, class: 'b-yard-inner' }, svg);
       for (const [sx, sy] of R.YARD_SPOTS[c]) {
         el('circle', { cx: sx * U, cy: sy * U, r: 5.4, class: 'b-hole', style: { stroke: pv(c) } }, svg);
@@ -212,6 +214,16 @@
           place(g, yx, yy, 1);
           await sleep(Math.max(260, stepMs * 4));
           g.style.transition = '';
+        } else if (ev.type === 'selfCapture') {
+          const g = toks[ev.color][ev.token];
+          const [x, y] = R.cellOf(ev.color, ev.from, ev.token);
+          burst(x, y, ev.color);
+          hooks.capture && hooks.capture(ev);
+          g.style.transition = 'transform ' + Math.round(Math.max(260, stepMs * 4)) + 'ms cubic-bezier(.5,-0.4,.5,1.4)';
+          const [yx, yy] = R.cellOf(ev.color, -1, ev.token);
+          place(g, yx, yy, 1);
+          await sleep(Math.max(260, stepMs * 4));
+          g.style.transition = '';
         } else if (ev.type === 'home') {
           burst(7.5, 7.5, ev.color);
           hooks.home && hooks.home(ev);
@@ -220,13 +232,21 @@
       render(next);
     }
 
+    /** Marks the colour whose turn it is (glowing yard), -1 for none. */
+    function setActive(color) {
+      for (let c = 0; c < 4; c++) {
+        yardGlow[c].classList.toggle('on', c === color);
+        yards[c].classList.toggle('active', c === color);
+      }
+    }
+
     function tokenCenter(c, i) {
       const g = toks[c][i];
       const b = g.getBoundingClientRect();
       return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
     }
 
-    return { svg, render, animate, setMovable, showTrail, burst, tokenCenter, get shown() { return shown; } };
+    return { svg, render, animate, setMovable, setActive, showTrail, burst, tokenCenter, get shown() { return shown; } };
   }
 
   root.L4P.Board = { create };

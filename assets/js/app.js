@@ -14,49 +14,53 @@
 
   // ───────────────────────────── themes and settings ─────────────────────────────
   const THEMES = [
-    { id: 'midnight', name: 'Midnight', dark: true, sw: ['#0f1530', '#f5c451', '#ef4f5f', '#3ccf7d', '#f7c948', '#4c8dff'] },
-    { id: 'obsidian', name: 'Obsidian', dark: true, sw: ['#0b0c0f', '#38e1ff', '#ff4d6d', '#2ee59d', '#ffd23f', '#4d7cff'] },
-    { id: 'aurora', name: 'Aurora', dark: true, sw: ['#0d1f2a', '#6ff2c4', '#ff6b8b', '#57e39b', '#ffd36e', '#6aa8ff'] },
-    { id: 'ember', name: 'Ember', dark: true, sw: ['#1a1310', '#ff9a3c', '#e8473c', '#7fbf4d', '#f2c14e', '#4f8fd6'] },
-    { id: 'forest', name: 'Forest', dark: true, sw: ['#0f1a14', '#c6e86b', '#e5544b', '#4fc77a', '#f0cf55', '#4c9ad8'] },
-    { id: 'ocean', name: 'Ocean', dark: true, sw: ['#071a2b', '#4fd1e8', '#ff6670', '#36d3a0', '#ffd166', '#3d8bff'] },
-    { id: 'velvet', name: 'Velvet', dark: true, sw: ['#1a0f22', '#ff7ac6', '#ff5470', '#4fd18b', '#ffcf5c', '#7b8cff'] },
-    { id: 'nord', name: 'Nord', dark: true, sw: ['#2e3440', '#88c0d0', '#bf616a', '#a3be8c', '#ebcb8b', '#81a1c1'] },
-    { id: 'graphite', name: 'Graphite', dark: true, sw: ['#18191b', '#8ab4ff', '#e05a5a', '#55b878', '#e3b94f', '#5a8ee0'] },
-    { id: 'neon', name: 'Neon', dark: true, sw: ['#0a0614', '#ff2bd6', '#ff3864', '#00f5a0', '#fff700', '#00c2ff'] },
-    { id: 'classic', name: 'Classic', dark: false, sw: ['#f3ead8', '#b5282f', '#d62f3a', '#1e9b4f', '#f2c12e', '#1f6fd1'] },
-    { id: 'sand', name: 'Sand', dark: false, sw: ['#efe6d6', '#8a5a2b', '#c8473f', '#4f9a5f', '#d9a93a', '#3f78b5'] },
+    { id: 'midnight', name: 'Midnight', dark: true, sw: ['#0f1530', '#f5c451', '#ef4f5f', '#2fbf71', '#ffd60a', '#4c8dff'] },
+    { id: 'obsidian', name: 'Obsidian', dark: true, sw: ['#0b0c0f', '#38e1ff', '#ff4d6d', '#20d68f', '#ffe11a', '#4d7cff'] },
+    { id: 'aurora', name: 'Aurora', dark: true, sw: ['#0d1f2a', '#6ff2c4', '#ff6b8b', '#3fd98a', '#ffe14d', '#6aa8ff'] },
+    { id: 'ember', name: 'Ember', dark: true, sw: ['#1a1310', '#ff9a3c', '#e8473c', '#5fb84a', '#ffd21f', '#4f8fd6'] },
+    { id: 'forest', name: 'Forest', dark: true, sw: ['#0f1a14', '#c6e86b', '#e5544b', '#3fbf74', '#ffd83d', '#4c9ad8'] },
+    { id: 'ocean', name: 'Ocean', dark: true, sw: ['#071a2b', '#4fd1e8', '#ff6670', '#2fcf98', '#ffdc3b', '#3d8bff'] },
+    { id: 'velvet', name: 'Velvet', dark: true, sw: ['#1a0f22', '#ff7ac6', '#ff5470', '#45cc84', '#ffdd3c', '#7b8cff'] },
+    { id: 'nord', name: 'Nord', dark: true, sw: ['#2e3440', '#88c0d0', '#bf616a', '#8fbf7f', '#f5d36b', '#81a1c1'] },
+    { id: 'graphite', name: 'Graphite', dark: true, sw: ['#18191b', '#8ab4ff', '#e05a5a', '#47b36f', '#ffd43b', '#5a8ee0'] },
+    { id: 'neon', name: 'Neon', dark: true, sw: ['#0a0614', '#ff2bd6', '#ff3864', '#00e09a', '#ffe500', '#00c2ff'] },
+    { id: 'classic', name: 'Classic', dark: false, sw: ['#f3ead8', '#b5282f', '#d62f3a', '#1a9a4c', '#ffcc00', '#1f6fd1'] },
+    { id: 'sand', name: 'Sand', dark: false, sw: ['#efe6d6', '#8a5a2b', '#c8473f', '#3f9655', '#f5c400', '#3f78b5'] },
   ];
   const DEFAULTS = {
     theme: 'auto', lang: 'auto', sound: true, volume: 0.6, anim: 'normal', tokens: 'glossy',
-    autoMove: true, autoRoll: false, hints: true, confirmLeave: true, showNotes: true,
-    level: 'normal', rules: Object.assign({}, R.DEFAULT_RULES),
+    autoMove: true, autoRoll: false, hints: true, confirmLeave: true, showNotes: true, showFullscreen: false,
+    level: 'normal', rules: Object.assign({}, R.DEFAULT_RULES), quickOpponents: 3,
     lastLocal: null, lastOnline: null, settingsSection: 'look', savedAt: 0,
   };
+  // Durations in ms. 0.2.0: twice as slow as 0.1.0 (step, think, dice, pause) plus a turn banner.
   const SPEED = {
-    slow: { step: 260, think: 950, dice: 760, pause: 900 },
-    normal: { step: 170, think: 620, dice: 560, pause: 650 },
-    fast: { step: 90, think: 300, dice: 340, pause: 380 },
-    instant: { step: 0, think: 60, dice: 0, pause: 120 },
+    slow: { step: 520, think: 1900, dice: 1520, pause: 1800, banner: 1500 },
+    normal: { step: 340, think: 1240, dice: 1120, pause: 1300, banner: 1100 },
+    fast: { step: 180, think: 600, dice: 680, pause: 760, banner: 700 },
+    instant: { step: 0, think: 60, dice: 0, pause: 120, banner: 0 },
   };
+  const SPEEDS = ['slow', 'normal', 'fast', 'instant'];
+  const speedId = v => (SPEEDS.indexOf(v) >= 0 ? v : 'normal');
+
   let settings = Object.assign({}, DEFAULTS, S.lsGet('settings', {}));
   settings.rules = R.normalizeRules(settings.rules);
   let saveState = 'saved';
   const saveListeners = new Set();
   const settingsDoc = S.Doc('settings.json', 250, s => { saveState = s; saveListeners.forEach(f => f(s)); });
-
-  function speed() { return SPEED[settings.anim] || SPEED.normal; }
+  const FULLSCREEN_OK = !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
 
   function applySettings() {
     let theme = settings.theme;
     if (theme === 'auto' || !THEMES.some(x => x.id === theme)) theme = PEERGOS_THEME === 'dark-mode' ? 'midnight' : (PEERGOS_THEME === '' && url.searchParams.has('theme') ? 'classic' : 'midnight');
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.tokens = settings.tokens;
-    document.documentElement.dataset.anim = settings.anim;
     I18n.setLang(I18n.resolve(settings.lang, PEERGOS_LANG));
     Sound.configure(settings.sound, settings.volume);
     const nb = document.getElementById('btn-notes');
     if (nb) nb.hidden = !settings.showNotes;
+    const fb = document.getElementById('btn-full');
+    if (fb) fb.hidden = !(settings.showFullscreen && FULLSCREEN_OK);
     const sb = document.getElementById('btn-sound');
     if (sb) { sb.replaceChildren(icon(settings.sound ? 'sound' : 'mute')); sb.title = t('menu.sound'); }
   }
@@ -92,6 +96,7 @@
   }
 
   // ───────────────────────────── saved local games ─────────────────────────────
+  // record: {id, created, updated, title, setup {seats, rules, first, speed}, actions, round, rounds: [{round, over, winner, finished, n}]}
   let localGames = S.lsGet('localGames', []);
   const gamesDoc = S.Doc('local-games.json', 400);
   function saveLocalGames() {
@@ -117,6 +122,17 @@
     } catch (e) { console.warn('games load', e); }
   }
 
+  // What the home screen knows about online games (setup, round, wins) – per browser, refreshed when a game is opened.
+  let onlineInfo = S.lsGet('onlineInfo', {});
+  function rememberOnline(chatId, rep) {
+    if (!rep || !rep.setup) return;
+    const wins = [0, 0, 0, 0];
+    for (const r of rep.rounds) if (r.over && r.winner != null) wins[r.winner]++;
+    onlineInfo[chatId] = { seats: rep.setup.seats, rules: rep.setup.rules, speed: rep.setup.speed || null, round: rep.rounds.length ? rep.rounds[rep.rounds.length - 1].round : 1,
+      over: rep.state.over, turn: rep.state.turn, wins, checked: Date.now() };
+    S.lsSet('onlineInfo', onlineInfo);
+  }
+
   // ───────────────────────────── helpers ─────────────────────────────
   function rollDie() {
     const a = new Uint8Array(1);
@@ -125,13 +141,45 @@
   }
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const colorName = c => t('color.' + c);
+  const chip = (c, cls) => h('span', { class: 'chip' + (cls ? ' ' + cls : ''), style: { background: 'var(--p' + c + ')' } });
 
   function seatName(seat, c) {
     if (!seat) return '';
     if (seat.kind === 'bot') return t('game.computerName') + ' · ' + t('level.' + (seat.level || 'normal'));
     if (seat.kind === 'local') return seat.name || colorName(c);
     if (seat.user && seat.user === ME) return t('common.you');
+    if (seat.user === 'me') return t('common.you');
     return seat.user || seat.name || t('common.you');
+  }
+  const isMine = seat => !!seat && seat.kind === 'human' && (seat.user === ME || (!ME && seat.user === 'me') || seat.user === 'me');
+
+  /** Short text of the rules that differ from the standard ones, and the full list for a tooltip. */
+  function rulesShort(rules) {
+    const r = R.normalizeRules(rules), d = R.DEFAULT_RULES, diff = [];
+    for (const k of Object.keys(d)) if (r[k] !== d[k]) diff.push(t('short.' + k));
+    const full = Object.keys(d).map(k => {
+      if (k === 'enterOn') return t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
+      if (k === 'endMode') return t('rule.endMode') + ': ' + t('rule.endMode.' + r.endMode);
+      return (r[k] ? '✓ ' : '✗ ') + t('rule.' + k);
+    }).join('\n');
+    return { text: diff.length ? diff.join(' · ') : t('short.standard'), full };
+  }
+
+  /** How a game is set up: who plays which colour (with computer levels), your colour, speed, rules, round. */
+  function summaryEl(info, opts) {
+    opts = opts || {};
+    const seats = info.seats || [];
+    const mine = seats.findIndex(isMine);
+    const wins = info.wins || [0, 0, 0, 0];
+    const anyWins = wins.some(w => w > 0);
+    const rs = rulesShort(info.rules);
+    return h('div', { class: 'sum' + (opts.compact ? ' compact' : '') },
+      h('div', { class: 'sum-players' }, seats.map((s, c) => s ? h('span', { class: 'sum-p' + (isMine(s) ? ' me' : ''), title: colorName(c) }, chip(c, 'sm'), seatName(s, c), anyWins ? h('b', { class: 'sum-w', title: t('sum.wins') }, '🏆' + wins[c]) : null) : null)),
+      h('div', { class: 'sum-meta' },
+        mine >= 0 ? h('span', null, t('sum.youPlay', { color: colorName(mine) })) : null,
+        h('span', null, t('sum.speed', { speed: t('set.anim.' + speedId(info.speed)) })),
+        h('span', { title: rs.full }, t('sum.rules', { rules: rs.text })),
+        info.round > 1 ? h('span', null, t('sum.round', { n: info.round })) : null));
   }
 
   // ───────────────────────────── app shell ─────────────────────────────
@@ -146,8 +194,8 @@
     const right = h('div', { class: 'top-actions' },
       h('button', { class: 'framed-btn', id: 'btn-notes', onclick: openNotes, title: t('menu.notes') + ' (Ctrl+Shift+N)' }, icon('note'), h('span', { 'data-t': 'menu.notes' }, t('menu.notes'))),
       h('button', { class: 'framed-btn', id: 'btn-settings', onclick: () => openSettings() }, icon('gear'), h('span', { 'data-t': 'menu.settings' }, t('menu.settings'))),
-      h('button', { class: 'icon-btn', id: 'btn-sound', onclick: () => { set({ sound: !settings.sound }); if (settings.sound) Sound.play('click'); } }, icon(settings.sound ? 'sound' : 'mute')),
-      h('button', { class: 'icon-btn', id: 'btn-full', title: t('menu.fullscreen'), onclick: toggleFullscreen }, icon('full')),
+      h('button', { class: 'icon-btn', id: 'btn-sound', onclick: () => { set({ sound: !settings.sound }, { quiet: true }); if (settings.sound) Sound.play('click'); } }, icon(settings.sound ? 'sound' : 'mute')),
+      h('button', { class: 'icon-btn', id: 'btn-full', title: t('menu.fullscreen'), onclick: toggleFullscreen, hidden: true }, icon('full')),
       h('button', { class: 'icon-btn', id: 'btn-help', title: t('menu.help'), onclick: openHelp }, icon('help')));
     return h('header', { class: 'topbar' }, logo, h('div', { class: 'top-title', id: 'top-title' }), right);
   }
@@ -155,7 +203,7 @@
   function toggleFullscreen() {
     const d = document;
     if (d.fullscreenElement) d.exitFullscreen().catch(() => {});
-    else (d.documentElement.requestFullscreen ? d.documentElement.requestFullscreen() : Promise.reject()).catch(() => toast(t('menu.fullscreen') + ' – not allowed here', 'warn'));
+    else d.documentElement.requestFullscreen().catch(() => toast(t('set.fullscreenBlocked'), 'warn', 7000));
   }
 
   function refreshTexts() {
@@ -180,9 +228,15 @@
       h('div', { class: 'hero-tokens', 'aria-hidden': 'true' }, [0, 1, 2, 3].map(c => h('span', { class: 'hero-tok', style: { '--c': 'var(--p' + c + ')', '--d': (c * 0.15) + 's' } }))),
       h('h1', { class: 'hero-title' }, h('span', { style: { color: 'var(--p0)' } }, 'L'), h('span', { style: { color: 'var(--p1)' } }, 'u'), h('span', { style: { color: 'var(--p2)' } }, 'd'), h('span', { style: { color: 'var(--p3)' } }, 'o'), h('span', { class: 'hero-4' }, '4'), 'Peergos'),
       h('p', { class: 'hero-sub' }, t('app.tagline')));
-    const card = (ic, title, sub, fn, cls, id) => h('button', { class: 'action-card ' + (cls || ''), onclick: fn, id }, h('span', { class: 'ac-icon' }, icon(ic)), h('span', { class: 'ac-text' }, h('b', null, title), h('small', null, sub)));
+    const card = (ic, title, sub, fn, cls, id, extra) => h('div', { class: 'action-card ' + (cls || ''), id, role: 'button', tabindex: '0', onclick: fn, onkeydown: e => { if (e.key === 'Enter' && e.target === e.currentTarget) fn(); } },
+      h('span', { class: 'ac-icon' }, icon(ic)), h('span', { class: 'ac-text' }, h('b', null, title), h('small', null, sub), extra || null));
+    const q = settings.quickOpponents;
+    const quickPick = h('span', { class: 'quick-pick', role: 'group', 'aria-label': t('home.opponents') },
+      h('span', { class: 'qp-label' }, t('home.opponents')),
+      [1, 2, 3].map(n => h('button', { class: 'qp-btn' + (q === n ? ' on' : ''), id: 'quick-' + n, title: t('home.quickN', { n }),
+        onclick: e => { e.stopPropagation(); set({ quickOpponents: n }, { quiet: true }); quickGame(n); } }, String(n))));
     const actions = h('section', { class: 'actions' },
-      card('play', t('home.quick'), t('home.quickSub'), quickGame, 'primary', 'act-quick'),
+      card('play', t('home.quick'), t('home.quickSub2', { level: t('level.' + settings.level), speed: t('set.anim.' + speedId(settings.anim)) }), () => quickGame(settings.quickOpponents), 'primary', 'act-quick', quickPick),
       card('dice', t('home.new'), t('home.newSub'), () => openNewGame('local'), '', 'act-new'),
       card('users', t('home.friends'), t('home.friendsSub'), () => openNewGame('online'), Net.available ? '' : 'disabled', 'act-friends'));
     const list = h('div', { class: 'games-list', id: 'games-list' });
@@ -193,8 +247,10 @@
     if (Net.available && onlineState !== 'loading') loadOnlineList();
   }
 
-  function playerDots(seats) {
-    return h('span', { class: 'dots' }, seats.map((s, c) => s ? h('span', { class: 'dot', style: { background: 'var(--p' + c + ')' }, title: colorName(c) + ': ' + seatName(s, c) }) : null));
+  function localInfo(g) {
+    const wins = [0, 0, 0, 0];
+    for (const r of g.rounds || []) if (r.over && r.winner != null) wins[r.winner]++;
+    return { seats: g.setup.seats, rules: g.setup.rules, speed: g.setup.speed, round: g.round || 1, wins };
   }
 
   function fillGamesList() {
@@ -205,10 +261,11 @@
       let st = null;
       try { st = R.replay(g.setup, g.actions); } catch (e) { continue; }
       const mineTurn = !st.over && st.seats[st.turn] && st.seats[st.turn].kind !== 'bot';
+      const status = st.over ? t('home.finished') : (mineTurn ? t('home.yourTurn') : t('home.inProgress'));
       items.push({
         when: g.updated, el: h('div', { class: 'game-card', tabindex: '0', onclick: () => openLocal(g.id), onkeydown: e => { if (e.key === 'Enter') openLocal(g.id); } },
           h('span', { class: 'gc-kind', title: t('home.local') }, icon('device')),
-          h('span', { class: 'gc-main' }, h('b', null, g.title || t('home.new')), h('small', null, playerDots(st.seats), ' ', st.over ? t('home.finished') : (mineTurn ? t('home.yourTurn') : t('home.inProgress')), ' · ', UI.timeAgo(new Date(g.updated)))),
+          h('span', { class: 'gc-main' }, h('span', { class: 'gc-title' }, h('b', null, g.title || t('home.new')), h('small', null, status + ' · ' + UI.timeAgo(new Date(g.updated)))), summaryEl(localInfo(g))),
           h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteLocal'), t('home.delete'), { danger: true })) { localGames = localGames.filter(x => x.id !== g.id); saveLocalGames(); fillGamesList(); } } }, icon('trash'))),
       });
     }
@@ -216,11 +273,13 @@
       for (const c of onlineList) {
         const when = c.latest && c.latest.creationTime ? parseLocal(c.latest.creationTime) : 0;
         const others = (c.members || []).filter(u => u !== ME);
+        const info = onlineInfo[c.chatId];
         items.push({
           when, el: h('div', { class: 'game-card online', tabindex: '0', onclick: () => openOnline(c.chatId), onkeydown: e => { if (e.key === 'Enter') openOnline(c.chatId); } },
             h('span', { class: 'gc-kind', title: t('home.online') }, icon('users')),
-            h('span', { class: 'gc-main' }, h('b', null, c.title || 'Ludo'), h('small', null, others.join(', ') || '—', when ? ' · ' + UI.timeAgo(new Date(when)) : '')),
-            h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteOnline'), t('home.delete'), { danger: true })) { await Net.remove(c.chatId).catch(() => false); onlineList = onlineList.filter(x => x.chatId !== c.chatId); fillGamesList(); } } }, icon('trash'))),
+            h('span', { class: 'gc-main' }, h('span', { class: 'gc-title' }, h('b', null, c.title || 'Ludo'), h('small', null, (info ? (info.over ? t('home.finished') : t('home.inProgress')) + ' · ' : '') + (others.join(', ') || '—') + (when ? ' · ' + UI.timeAgo(new Date(when)) : ''))),
+              info ? summaryEl(info) : h('div', { class: 'sum muted small' }, t('sum.loading'))),
+            h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteOnline'), t('home.delete'), { danger: true })) { await Net.remove(c.chatId).catch(() => false); onlineList = onlineList.filter(x => x.chatId !== c.chatId); delete onlineInfo[c.chatId]; S.lsSet('onlineInfo', onlineInfo); fillGamesList(); } } }, icon('trash'))),
         });
       }
     }
@@ -242,6 +301,16 @@
     try { onlineList = await Net.listGames(); onlineState = 'ok'; }
     catch (e) { console.warn('online list', e); onlineState = 'error'; }
     if (screen === 'home') fillGamesList();
+    // fill in the summaries of games this browser has not looked at yet (or not for 10 minutes)
+    if (onlineList) {
+      const todo = onlineList.filter(c => !onlineInfo[c.chatId] || Date.now() - (onlineInfo[c.chatId].checked || 0) > 600000).slice(0, 6);
+      for (const c of todo) {
+        if (screen !== 'home') break;
+        try { const res = await Net.read(c.chatId, 0); rememberOnline(c.chatId, P.replay(res.entries.filter(e => e.type === 'Application'), P.chatOwner(c.chatId))); }
+        catch (e) { console.warn('summary', e); }
+        if (screen === 'home') fillGamesList();
+      }
+    }
   }
 
   // ───────────────────────────── new game dialog ─────────────────────────────
@@ -250,9 +319,17 @@
     return [{ kind: 'me' }, { kind: 'bot', level: settings.level }, { kind: 'bot', level: settings.level }, { kind: 'bot', level: settings.level }];
   }
 
-  function quickGame() {
-    const seats = [{ kind: 'human', user: ME || 'me' }, { kind: 'bot', level: settings.level }, { kind: 'bot', level: settings.level }, { kind: 'bot', level: settings.level }];
-    startLocal({ seats, rules: settings.rules, first: 0 }, t('home.quick'));
+  /** Quick game: you against n computer players with the saved settings (level, speed, rules).
+   *  The first opponent sits opposite you, then the others fill the remaining colours. */
+  function quickGame(n) {
+    n = [1, 2, 3].indexOf(n) >= 0 ? n : 3;
+    const last = settings.lastLocal && Array.isArray(settings.lastLocal.seats) ? settings.lastLocal.seats.findIndex(s => s && s.kind === 'me') : -1;
+    const meC = last >= 0 ? last : 0;
+    const order = [(meC + 2) % 4, (meC + 1) % 4, (meC + 3) % 4];
+    const seats = [null, null, null, null];
+    seats[meC] = { kind: 'human', user: ME || 'me' };
+    for (let k = 0; k < n; k++) seats[order[k]] = { kind: 'bot', level: settings.level };
+    startLocal({ seats, rules: R.normalizeRules(settings.rules), first: meC, speed: speedId(settings.anim) }, t('home.quickN', { n }));
   }
 
   function openNewGame(mode) {
@@ -261,6 +338,7 @@
     const seats = (last && Array.isArray(last.seats) && last.seats.length === 4 ? last.seats : defaultSeats(mode)).map(s => Object.assign({}, s));
     const rules = R.normalizeRules(last && last.rules ? last.rules : settings.rules);
     let first = last && last.first != null ? last.first : 'random';
+    let speed = speedId(last && last.speed ? last.speed : settings.anim);
     const kinds = mode === 'online' ? ['me', 'friend', 'bot', 'empty'] : ['me', 'bot', 'local', 'empty'];
     const kindLabel = k => t(k === 'me' ? 'new.seat.me' : k === 'bot' ? 'new.seat.bot' : k === 'local' ? 'new.seat.local' : k === 'friend' ? 'new.seat.friend' : 'new.seat.empty');
     const err = h('div', { class: 'form-error', role: 'alert' });
@@ -268,7 +346,7 @@
 
     function remember() {
       const key = mode === 'online' ? 'lastOnline' : 'lastLocal';
-      set({ [key]: { seats, rules, first } }, { quiet: true });
+      set({ [key]: { seats, rules, first, speed } }, { quiet: true });
     }
     function validate() {
       const n = seats.filter(s => s.kind !== 'empty').length;
@@ -296,21 +374,26 @@
         if (s.kind === 'bot') extra.appendChild(h('div', { class: 'seg small' }, ['easy', 'normal', 'hard'].map(l => h('button', { class: 'seg-btn' + ((s.level || 'normal') === l ? ' on' : ''), onclick: () => { s.level = l; drawRows(); remember(); } }, t('level.' + l)))));
         if (s.kind === 'local') extra.appendChild(h('input', { class: 'text-in', type: 'text', maxlength: '24', value: s.name || '', placeholder: t('new.namePlaceholder') + ' (' + colorName(c) + ')', oninput: e => { s.name = e.target.value; remember(); } }));
         return h('div', { class: 'seat-row' + (s.kind === 'empty' ? ' empty' : '') },
-          h('span', { class: 'seat-color' }, h('span', { class: 'chip', style: { background: 'var(--p' + c + ')' } }), colorName(c)), seg, extra);
+          h('span', { class: 'seat-color' }, chip(c), colorName(c)), seg, extra);
       }));
       validate();
     }
-    const firstSel = h('div', { class: 'seg small' }, ['random', 0, 1, 2, 3].map(v => h('button', {
-      class: 'seg-btn' + (first === v ? ' on' : ''), onclick: e => { first = v; [...firstSel.children].forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); remember(); },
-    }, v === 'random' ? t('new.first.random') : h('span', { class: 'chip sm', style: { background: 'var(--p' + v + ')' }, title: colorName(v) }))));
+    const segOf = (vals, cur, label, onPick) => {
+      const box = h('div', { class: 'seg small' });
+      box.append(...vals.map(v => h('button', { class: 'seg-btn' + (cur() === v ? ' on' : ''), onclick: e => { onPick(v); [...box.children].forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); remember(); } }, label(v))));
+      return box;
+    };
+    const firstSel = segOf(['random', 0, 1, 2, 3], () => first, v => v === 'random' ? t('new.first.random') : h('span', { class: 'chip sm', style: { background: 'var(--p' + v + ')' }, title: colorName(v) }), v => { first = v; });
+    const speedSel = segOf(SPEEDS, () => speed, v => t('set.anim.' + v), v => { speed = v; });
 
     const rulesBox = rulesEditor(rules, () => remember());
     const startBtn = h('button', { class: 'btn primary big', onclick: go }, icon(mode === 'online' ? 'users' : 'play'), mode === 'online' ? t('new.invite') : t('new.start'));
     const d = dialog({
       title: mode === 'online' ? t('new.friendsTitle') : t('new.title'), icon: mode === 'online' ? 'users' : 'dice', cls: 'dlg-new',
-      body: [h('h3', null, t('new.players')), rows, h('div', { class: 'first-row' }, h('span', null, t('new.first')), firstSel),
+      body: [h('h3', null, t('new.players')), rows,
+        h('div', { class: 'first-row' }, h('span', null, t('new.first')), firstSel, h('span', { class: 'gap' }), h('span', null, t('new.speed')), speedSel),
         mode === 'online' ? h('p', { class: 'hint' }, t('new.friendsHint')) : null,
-        h('details', { class: 'rules-details' }, h('summary', null, t('new.rules')), rulesBox), err],
+        h('details', { class: 'rules-details' }, h('summary', null, t('new.rules'), h('small', { class: 'muted' }, ' – ' + rulesShort(rules).text)), rulesBox), err],
       footer: [h('button', { class: 'btn', onclick: () => d.close() }, t('common.cancel')), startBtn],
     });
     drawRows();
@@ -322,11 +405,11 @@
       if (mode === 'local') {
         const seatsOut = seats.map((s, c) => s.kind === 'empty' ? null : s.kind === 'me' ? { kind: 'human', user: ME || 'me' } : s.kind === 'bot' ? { kind: 'bot', level: s.level || 'normal' } : { kind: 'local', name: (s.name || '').trim() || colorName(c) });
         d.close();
-        startLocal({ seats: seatsOut, rules, first: f == null ? randomFirst(seatsOut) : f }, null);
+        startLocal({ seats: seatsOut, rules: R.normalizeRules(rules), first: f == null ? randomFirst(seatsOut) : f, speed }, null);
       } else {
         startBtn.disabled = true;
         startBtn.lastChild.textContent = t('new.creating');
-        try { await createOnline(seats, rules, f); d.close(); }
+        try { await createOnline(seats, R.normalizeRules(rules), f, speed); d.close(); }
         catch (e) { console.error(e); toast(String(e.message || e), 'bad'); }
         finally { startBtn.disabled = false; startBtn.lastChild.textContent = t('new.invite'); }
       }
@@ -338,22 +421,23 @@
     return a[rollDie() % a.length];
   }
 
-  function rulesEditor(rules, onChange) {
+  function rulesEditor(rules, onChange, readOnly) {
     const row = (key, control) => h('div', { class: 'rule-row' }, h('span', null, t('rule.' + key)), control);
-    const toggle = key => h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: rules[key] ? true : null, onchange: e => { rules[key] = e.target.checked; onChange(); } }), h('span', { class: 'slider' }));
+    const toggle = key => h('label', { class: 'switch' + (readOnly ? ' ro' : '') }, h('input', { type: 'checkbox', disabled: readOnly ? true : null, checked: rules[key] ? true : null, onchange: e => { rules[key] = e.target.checked; onChange(); } }), h('span', { class: 'slider' }));
     const choice = (key, vals) => {
-      const seg = h('div', { class: 'seg small' }, vals.map(v => h('button', { class: 'seg-btn' + (rules[key] === v ? ' on' : ''), onclick: e => { rules[key] = v; [...seg.children].forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); onChange(); } }, t('rule.' + key + '.' + v))));
+      const seg = h('div', { class: 'seg small' + (readOnly ? ' ro' : '') }, vals.map(v => h('button', { class: 'seg-btn' + (rules[key] === v ? ' on' : ''), disabled: readOnly ? true : null, onclick: e => { rules[key] = v; [...seg.children].forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); onChange(); } }, t('rule.' + key + '.' + v))));
       return seg;
     };
-    return h('div', { class: 'rules' },
+    return h('div', { class: 'rules' + (readOnly ? ' read-only' : '') },
       row('enterOn', choice('enterOn', ['six', 'oneOrSix'])),
       row('sixBonus', toggle('sixBonus')), row('threeSixes', toggle('threeSixes')),
       row('captureBonus', toggle('captureBonus')), row('finishBonus', toggle('finishBonus')),
       row('safeSquares', toggle('safeSquares')), row('threeTries', toggle('threeTries')),
+      row('selfKick', toggle('selfKick')),
       row('endMode', choice('endMode', ['first', 'all'])));
   }
 
-  async function createOnline(seats, rules, first) {
+  async function createOnline(seats, rules, first, speed) {
     const friendSeats = seats.map((s, c) => s.kind === 'friend' ? c : -1).filter(c => c >= 0);
     const title = 'Ludo · ' + (ME || 'game');
     const chatId = await Net.createGame(title, friendSeats.length);
@@ -372,7 +456,7 @@
     }
     if (out.filter(Boolean).length < 2) throw new Error(t('new.needTwo'));
     if (members.length < friendSeats.length) toast(t('new.fewerFriends'), 'warn', 5000);
-    const setup = P.msg('setup', { g: P.randomId(8), seats: out, rules, first: first == null ? randomFirst(out) : first }, VERSION);
+    const setup = P.msg('setup', { g: P.randomId(8), seats: out, rules, first: first == null ? randomFirst(out) : first, speed: speedId(speed), round: 1 }, VERSION);
     await Net.send(chatId, P.encode(setup));
     onlineList = null;
     await openOnline(chatId, { initial: [{ author: ME, text: P.encode(setup), type: 'Application' }] });
@@ -392,7 +476,7 @@
     const pane = h('div', { class: 'set-pane' });
     const SECS = [['look', 'gear'], ['play', 'play'], ['sound', 'sound'], ['rules', 'flag'], ['about', 'help']];
     function draw() {
-      tabs.replaceChildren(...SECS.map(([id, ic]) => h('button', { class: 'set-tab' + (sec === id ? ' on' : ''), onclick: () => { sec = id; set({ settingsSection: id }, { quiet: true }); draw(); } }, icon(ic), h('span', null, t('set.sec.' + id)))));
+      tabs.replaceChildren(...SECS.map(([id, ic]) => h('button', { class: 'set-tab' + (sec === id ? ' on' : ''), 'data-sec': id, onclick: () => { sec = id; set({ settingsSection: id }, { quiet: true }); draw(); } }, icon(ic), h('span', null, t('set.sec.' + id)))));
       pane.replaceChildren(...sectionBody(sec, draw));
     }
     const d = dialog({ title: t('set.title'), icon: 'gear', cls: 'dlg-settings', controls: status, body: h('div', { class: 'set-layout' }, tabs, pane), onClose: () => saveListeners.delete(showSave) });
@@ -401,9 +485,11 @@
   }
 
   function sectionBody(sec, redraw) {
+    const inGame = screen === 'game' && !!game;
     const field = (label, control, sub) => h('div', { class: 'field' }, h('div', { class: 'field-label' }, label, sub ? h('small', null, sub) : null), control);
-    const toggle = (key, label) => h('label', { class: 'toggle-row' }, h('span', null, label), h('span', { class: 'switch' }, h('input', { type: 'checkbox', checked: settings[key] ? true : null, onchange: e => set({ [key]: e.target.checked }) }), h('span', { class: 'slider' })));
-    const seg = (key, vals, label) => h('div', { class: 'seg' }, vals.map(v => h('button', { class: 'seg-btn' + (settings[key] === v ? ' on' : ''), onclick: () => { set({ [key]: v }); redraw(); } }, label(v))));
+    const toggle = (key, label, disabled, sub) => h('label', { class: 'toggle-row' + (disabled ? ' disabled' : '') }, h('span', null, label, sub ? h('small', null, sub) : null), h('span', { class: 'switch' }, h('input', { type: 'checkbox', disabled: disabled ? true : null, checked: settings[key] ? true : null, onchange: e => set({ [key]: e.target.checked }) }), h('span', { class: 'slider' })));
+    const seg = (key, vals, label, disabled) => h('div', { class: 'seg' + (disabled ? ' ro' : '') }, vals.map(v => h('button', { class: 'seg-btn' + (settings[key] === v ? ' on' : ''), disabled: disabled ? true : null, onclick: () => { set({ [key]: v }); redraw(); } }, label(v))));
+    const lockNote = () => h('p', { class: 'lock-note' }, icon('flag'), t('set.lockedInGame'));
     if (sec === 'look') {
       const cur = settings.theme;
       const themes = h('div', { class: 'theme-grid' },
@@ -415,9 +501,10 @@
           h('span', { class: 'theme-name' }, th.name, cur === th.id ? icon('check') : null))));
       return [field(t('set.theme'), themes),
         field(t('set.tokens'), seg('tokens', ['glossy', 'flat'], v => t('set.tokens.' + v))),
-        field(t('set.anim'), seg('anim', ['slow', 'normal', 'fast', 'instant'], v => t('set.anim.' + v))),
+        h('div', { class: 'field', id: 'field-speed' }, h('div', { class: 'field-label' }, t('set.anim')), seg('anim', SPEEDS, v => t('set.anim.' + v), inGame), inGame ? lockNote() : null),
         field(t('set.lang'), seg('lang', ['auto'].concat(Object.keys(I18n.LANGS)), v => v === 'auto' ? t('set.lang.auto') : I18n.LANGS[v].name)),
-        toggle('showNotes', t('set.showNotes'))];
+        toggle('showNotes', t('set.showNotes')),
+        toggle('showFullscreen', t('set.showFullscreen'), !FULLSCREEN_OK, FULLSCREEN_OK ? null : t('set.fullscreenBlocked'))];
     }
     if (sec === 'play') {
       return [toggle('autoMove', t('set.autoMove')), toggle('autoRoll', t('set.autoRoll')), toggle('hints', t('set.hints')), toggle('confirmLeave', t('set.confirmLeave')),
@@ -428,6 +515,9 @@
       return [toggle('sound', t('set.sound')), field(t('set.volume'), h('div', { class: 'vol-row' }, vol, h('button', { class: 'btn small', onclick: () => Sound.play('win') }, icon('play'), t('set.test'))))];
     }
     if (sec === 'rules') {
+      if (inGame && game.currentRules) {
+        return [h('h4', { class: 'sub-head' }, t('set.gameRules')), rulesEditor(Object.assign({}, game.currentRules()), () => {}, true), lockNote()];
+      }
       const rules = Object.assign({}, settings.rules);
       return [h('p', { class: 'hint' }, t('set.rulesHint')), rulesEditor(rules, () => set({ rules: R.normalizeRules(rules) }, { quiet: true }))];
     }
@@ -445,8 +535,29 @@
       } }, t('set.reset')))];
   }
 
+  /** "How to play" written from a concrete set of rules, so everyone reads the rules that really apply. */
+  function rulesHelpHtml(rules) {
+    const r = R.normalizeRules(rules);
+    const enter = t('help.enter.' + r.enterOn);
+    const li = [];
+    li.push(t(r.sixBonus ? 'help.sixBonus.on' : 'help.sixBonus.off'));
+    if (r.sixBonus) li.push(t(r.threeSixes ? 'help.threeSixes.on' : 'help.threeSixes.off'));
+    li.push(t('help.capture') + t(r.captureBonus ? 'help.capture.bonus' : 'help.capture.noBonus'));
+    li.push(t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
+    li.push(t(r.selfKick ? 'help.selfKick.on' : 'help.selfKick.off'));
+    li.push(t(r.finishBonus ? 'help.finishBonus.on' : 'help.finishBonus.off') + ' ' + t('help.exact'));
+    li.push(t(r.threeTries ? 'help.threeTries.on' : 'help.threeTries.off', { enter }));
+    li.push(t(r.endMode === 'all' ? 'help.end.all' : 'help.end.first'));
+    return '<p>' + t('help.intro', { enter }) + '</p><ul class="help-rules">' + li.map(x => '<li>' + x + '</li>').join('') + '</ul>';
+  }
+
   function openHelp() {
-    dialog({ title: t('help.title'), icon: 'help', cls: 'dlg-help', body: h('div', { class: 'help', html: t('help.body') }) });
+    const inGame = screen === 'game' && game && game.currentRules && game.currentRules();
+    const rules = inGame ? game.currentRules() : settings.rules;
+    const head = h('div', { class: 'help-head' + (inGame ? ' game' : '') }, icon(inGame ? 'flag' : 'gear'),
+      h('b', null, t(inGame ? 'help.forGame' : 'help.forNew')),
+      inGame ? h('span', { class: 'muted' }, ' · ' + t('help.speedRound', { speed: t('set.anim.' + game.speedId), round: game.roundNo() })) : null);
+    dialog({ title: t('help.title'), icon: 'help', cls: 'dlg-help', body: [head, h('div', { class: 'help', id: 'help-rules', html: rulesHelpHtml(rules) }), h('div', { class: 'help help-common', html: t('help.common') })] });
   }
 
   // ───────────────────────────── User notes ─────────────────────────────
@@ -498,7 +609,7 @@
 
   // ───────────────────────────── game session ─────────────────────────────
   function startLocal(setup, title) {
-    const g = { id: 'L' + Date.now().toString(36) + P.randomId(4), created: Date.now(), updated: Date.now(), title: title || defaultTitle(setup), setup, actions: [] };
+    const g = { id: 'L' + Date.now().toString(36) + P.randomId(4), created: Date.now(), updated: Date.now(), title: title || defaultTitle(setup), setup, actions: [], round: 1, rounds: [] };
     localGames.unshift(g);
     saveLocalGames();
     openLocal(g.id);
@@ -512,6 +623,8 @@
   function openLocal(id) {
     const rec = localGames.find(g => g.id === id);
     if (!rec) return;
+    // games saved by 0.1.0 have no speed: fix it now, so it cannot change while the game runs
+    if (!rec.setup.speed) { rec.setup.speed = speedId(settings.anim); saveLocalGames(); }
     let state;
     try { state = R.replay(rec.setup, rec.actions); } catch (e) { toast(t('err.load'), 'bad'); return; }
     startSession({ mode: 'local', rec, setup: rec.setup, state });
@@ -523,7 +636,7 @@
   }
 
   function leaveToHome() {
-    if (game && !game.state.over && settings.confirmLeave && game.mode === 'local' && game.phase !== 'loading') {
+    if (game && game.state && !game.state.over && settings.confirmLeave && game.mode === 'local' && game.phase !== 'loading') {
       confirm(t('game.leave'), t('game.backHome')).then(ok => { if (ok) { game.stop(); game = null; renderHome(); } });
       return;
     }
@@ -538,115 +651,169 @@
 
   function createGameView(sess) {
     screen = 'game';
+    const online = sess.mode === 'online';
     const m = main();
     m.className = 'screen game';
     const boardBox = h('div', { class: 'board' });
+    const banner = h('div', { class: 'turn-banner', 'aria-live': 'polite' });
     const players = h('div', { class: 'players' });
     const dieEl = buildDie();
     const status = h('div', { class: 'status' });
     const hint = h('div', { class: 'status-hint' });
     const netState = h('div', { class: 'net-state' });
     const diceArea = h('div', { class: 'dice-area' }, h('button', { class: 'die-btn', id: 'die', 'aria-label': t('game.roll'), onclick: () => userRoll() }, dieEl.wrap), h('div', { class: 'status-box' }, status, hint, netState));
+    const restartBox = h('div', { class: 'restart-box', hidden: true });
+    const infoBox = h('div', { class: 'info-box' });
     const log = h('ol', { class: 'log', id: 'log' });
-    const chatList = h('div', { class: 'chat-list' });
-    const chatIn = h('input', { class: 'text-in', type: 'text', maxlength: '200', placeholder: t('game.say'), onkeydown: e => { if (e.key === 'Enter') sendSay(); } });
-    const chatBox = h('div', { class: 'chat' }, chatList, h('div', { class: 'chat-input' }, chatIn, h('button', { class: 'icon-btn', title: t('game.send'), onclick: sendSay }, icon('send'))));
-    let tab = sess.mode === 'online' ? 'chat' : 'log';
-    const tabsEl = h('div', { class: 'side-tabs' });
-    const tabBody = h('div', { class: 'side-tab-body' });
+    const logBox = h('div', { class: 'log-box' }, h('div', { class: 'panel-head' }, icon('dice'), h('span', null, t('game.log'))), log);
     const actionsEl = h('div', { class: 'game-actions' });
-    const side = h('aside', { class: 'side' }, players, diceArea, tabsEl, tabBody, actionsEl);
-    m.replaceChildren(h('div', { class: 'game-layout' }, h('div', { class: 'board-wrap' }, boardBox), side));
+    const left = h('aside', { class: 'side side-left' }, diceArea, players, restartBox, infoBox, logBox, actionsEl);
+    let chatList = null, chatIn = null, right = null;
+    if (online) {
+      chatList = h('div', { class: 'chat-list' });
+      chatIn = h('input', { class: 'text-in', type: 'text', maxlength: '200', placeholder: t('game.say'), onkeydown: e => { if (e.key === 'Enter') sendSay(); } });
+      right = h('aside', { class: 'side side-right' }, h('div', { class: 'chat' }, h('div', { class: 'panel-head' }, icon('chat'), h('span', null, t('game.chat'))), chatList,
+        h('div', { class: 'chat-input' }, chatIn, h('button', { class: 'icon-btn', title: t('game.send'), onclick: sendSay }, icon('send')))));
+    }
+    m.replaceChildren(h('div', { class: 'game-layout' + (online ? '' : ' no-chat') }, left, h('div', { class: 'board-wrap' }, boardBox, banner), right));
 
     const board = Board.create(boardBox, { onToken: (c, i) => userPick(c, i) });
     const self = {
       mode: sess.mode, sess, phase: 'loading', state: null, shownN: -1, roll: null, legal: [],
       busy: false, stopped: false, pollTimer: null, outbox: null, joined: new Set(), invited: new Set(),
-      logItems: [], winnerShown: false, lastSync: 0, unknown: 0,
+      winnerShown: false, lastChange: 0, unknown: 0, prevTurn: null, seq: 0, sentRoundFor: new Set(),
+      speedId: speedId(online ? settings.anim : sess.rec.setup.speed),
       stop, refresh,
     };
-    Object.defineProperty(self, 'state', { get: () => self._state, set: v => { self._state = v; } });
+    const sp = () => SPEED[self.speedId] || SPEED.normal;
+    self.roundNo = () => roundNo();
+    self.currentRules = () => (online ? (self.replay && self.replay.setup ? R.normalizeRules(self.replay.setup.rules) : null) : R.normalizeRules(sess.rec.setup.rules));
 
     function stop() {
       self.stopped = true;
       clearTimeout(self.pollTimer);
+      clearTimeout(nextTimer);
       document.removeEventListener('visibilitychange', onVis);
     }
-    function onVis() { if (!document.hidden && self.mode === 'online') schedulePoll(50); }
+    function onVis() { if (!document.hidden && online) schedulePoll(50); }
     document.addEventListener('visibilitychange', onVis);
 
     // ── who controls a seat on this device
     function controlOf(state, c) {
       const seat = state.seats[c];
       if (!seat) return 'none';
-      if (self.mode === 'local') return seat.kind === 'bot' ? 'bot' : 'me';
+      if (!online) return seat.kind === 'bot' ? 'bot' : 'me';
       const ctrl = self.replay.controller(c, state.n);
       if (ctrl !== ME) return 'remote';
       return seat.kind === 'bot' || (self.replay.resignedAt[c] != null && state.n >= self.replay.resignedAt[c]) ? 'bot' : 'me';
     }
     function nameOf(c) {
       const seat = self.state.seats[c];
-      if (self.mode === 'online' && seat && seat.kind === 'human' && self.replay && self.replay.resignedAt[c] != null) return seatName(seat, c) + ' (' + t('game.computer') + ')';
+      if (online && seat && seat.kind === 'human' && self.replay && self.replay.resignedAt && self.replay.resignedAt[c] != null) return seatName(seat, c) + ' (' + t('game.computer') + ')';
       return seatName(seat, c);
+    }
+    function currentSetup() { return online ? (self.replay && self.replay.setup) : sess.rec.setup; }
+    function roundNo() { return online ? (self.replay && self.replay.rounds.length ? self.replay.rounds[self.replay.rounds.length - 1].round : 1) : (sess.rec.round || 1); }
+    function winsTally() {
+      const wins = [0, 0, 0, 0];
+      const list = online ? (self.replay ? self.replay.rounds.slice(0, -1) : []) : (sess.rec.rounds || []);
+      for (const r of list) if (r.over && r.winner != null) wins[r.winner]++;
+      return wins;
     }
 
     // ── panel
     function drawPlayers() {
       const st = self.state;
       if (!st) { players.replaceChildren(); return; }
+      const wins = winsTally();
+      const showWins = roundNo() > 1;
       players.replaceChildren(...[0, 1, 2, 3].filter(c => st.seats[c]).map(c => {
         const seat = st.seats[c];
         const place = st.finished.indexOf(c);
         const badges = [];
-        if (self.mode === 'online') {
+        if (online) {
           if (seat.kind === 'human' && seat.user === self.sess.host) badges.push(h('span', { class: 'badge' }, t('game.host')));
           if (seat.kind === 'human' && seat.user !== ME && seat.user !== self.sess.host && !self.joined.has(seat.user)) badges.push(h('span', { class: 'badge warn', title: t('game.notJoined', { name: seat.user }) }, t('game.invited')));
         }
         if (seat.kind === 'bot') badges.push(h('span', { class: 'badge' }, icon('cpu')));
         const pct = Math.round(R.progress(st, c) * 100);
-        return h('div', { class: 'player' + (st.turn === c && !st.over ? ' active' : '') + (place >= 0 ? ' done' : ''), style: { '--c': 'var(--p' + c + ')' } },
+        const active = st.turn === c && !st.over;
+        return h('div', { class: 'player' + (active ? ' active' : '') + (place >= 0 ? ' done' : ''), style: { '--c': 'var(--p' + c + ')' } },
           h('span', { class: 'pl-token' }),
           h('span', { class: 'pl-main' }, h('span', { class: 'pl-name' }, nameOf(c), ...badges), h('span', { class: 'pl-bar' }, h('i', { style: { width: pct + '%' } }))),
-          h('span', { class: 'pl-side' }, place >= 0 ? h('span', { class: 'medal m' + (place + 1) }, String(place + 1)) : h('span', { class: 'pl-home', title: 'home' }, st.tokens[c].filter(p => p === R.FINISH).length + '/4')));
+          h('span', { class: 'pl-side' }, showWins ? h('span', { class: 'pl-wins', title: t('sum.wins') }, '🏆' + wins[c]) : null,
+            place >= 0 ? h('span', { class: 'medal m' + (place + 1) }, String(place + 1)) : h('span', { class: 'pl-home', title: 'home' }, st.tokens[c].filter(p => p === R.FINISH).length + '/4')),
+          active ? h('span', { class: 'pl-turn' }, '▶') : null);
       }));
     }
-    function drawTabs() {
-      const tabsList = [['log', t('game.log')]];
-      if (self.mode === 'online') tabsList.unshift(['chat', t('game.chat')]);
-      tabsEl.replaceChildren(...tabsList.map(([id, label]) => h('button', { class: 'side-tab' + (tab === id ? ' on' : ''), onclick: () => { tab = id; drawTabs(); } }, label)));
-      tabBody.replaceChildren(tab === 'chat' ? chatBox : log);
-      if (tab === 'log') log.scrollTop = log.scrollHeight;
+    function drawInfo() {
+      const setup = currentSetup();
+      if (!setup) { infoBox.replaceChildren(); return; }
+      infoBox.replaceChildren(h('div', { class: 'panel-head' }, icon('flag'), h('span', null, t('game.info')), h('span', { class: 'round-tag' }, t('game.roundN', { n: roundNo() })),
+        h('button', { class: 'link-btn small', id: 'btn-game-rules', onclick: openHelp, title: t('help.forGame') }, icon('help'), t('new.rules'))),
+        summaryEl({ seats: setup.seats, rules: setup.rules, speed: self.speedId, round: 1, wins: [0, 0, 0, 0] }, { compact: true }));
     }
     function drawActions() {
       const btns = [];
-      if (self.mode === 'online' && self.state && !self.state.over) {
-        const mine = self.state.seats.findIndex(s => s && s.kind === 'human' && s.user === ME);
-        if (mine >= 0 && self.replay.resignedAt[mine] == null) btns.push(h('button', { class: 'btn small ghost', onclick: resign }, icon('flag'), t('game.resign')));
+      const st = self.state;
+      if (online && st && self.replay && self.replay.setup) {
+        const mine = st.seats.findIndex(s => s && s.kind === 'human' && s.user === ME);
+        if (mine >= 0 && !st.over && self.replay.resignedAt[mine] == null) btns.push(h('button', { class: 'btn small ghost', onclick: resign }, icon('flag'), t('game.resign')));
+        if (mine >= 0) btns.push(h('button', { class: 'btn small', id: 'btn-new-round', onclick: () => askRound(true) }, icon('play'), t('game.askRound')));
+      } else if (!online && st) {
+        btns.push(h('button', { class: 'btn small', id: 'btn-new-round', onclick: () => newRoundLocal(true) }, icon('play'), t('game.newRound')));
       }
-      if (self.state && self.state.over) btns.push(h('button', { class: 'btn small', onclick: showWinner }, icon('trophy'), t('game.over')));
+      if (st && st.over) btns.push(h('button', { class: 'btn small', onclick: () => showWinner(false) }, icon('trophy'), t('game.over')));
       btns.push(h('button', { class: 'btn small ghost', onclick: () => leaveToHome() }, icon('home'), t('game.backHome')));
       actionsEl.replaceChildren(...btns);
     }
+    function logRound(n) { log.appendChild(h('li', { class: 'round-sep' }, t('game.roundN', { n }))); }
     function addLog(text, color) {
-      self.logItems.push({ text, color });
-      if (self.logItems.length > 300) self.logItems.shift();
       log.appendChild(h('li', { style: color != null ? { '--c': 'var(--p' + color + ')' } : null }, text));
       while (log.children.length > 300) log.firstChild.remove();
       log.scrollTop = log.scrollHeight;
     }
     function drawChat() {
-      const says = (self.replay && self.replay.says) || [];
-      chatList.replaceChildren(...says.slice(-100).map(s => {
+      if (!online) return;
+      const tl = (self.replay && self.replay.timeline) || [];
+      chatList.replaceChildren(...tl.slice(-150).map(s => {
+        if (s.kind === 'round') return h('div', { class: 'chat-round' }, h('span', null, t('game.roundN', { n: s.round })));
         const c = self.state ? self.state.seats.findIndex(x => x && x.user === s.author) : -1;
         return h('div', { class: 'say' + (s.author === ME ? ' me' : ''), style: c >= 0 ? { '--c': 'var(--p' + c + ')' } : null }, h('b', null, s.author === ME ? t('common.you') : s.author), h('span', null, s.text));
       }));
       chatList.scrollTop = chatList.scrollHeight;
     }
+    function drawRestart() {
+      const rs = online && self.replay ? self.replay.restart : null;
+      if (!rs) { restartBox.hidden = true; return; }
+      restartBox.hidden = false;
+      // a question that needs my answer must not hide behind the results dialog
+      if (!rs.declinedBy && !rs.complete && rs.needed.indexOf(ME) >= 0 && rs.votes[ME] === undefined && self.askedSeen !== rs.id) {
+        self.askedSeen = rs.id;
+        if (self.winnerDlg) self.winnerDlg.close();
+        Sound.play('turn');
+        toast(t('game.roundAsked', { name: rs.author }), 'info', 3500);
+      }
+      const who = rs.author === ME ? t('game.youAsked') : t('game.roundAsked', { name: rs.author });
+      const kids = [h('div', { class: 'rb-title' }, icon('play'), who)];
+      if (rs.declinedBy) kids.push(h('div', { class: 'rb-line bad' }, t('game.roundDeclined', { name: rs.declinedBy === ME ? t('common.you') : rs.declinedBy })));
+      else if (rs.complete) kids.push(h('div', { class: 'rb-line ok' }, t('game.roundStarting', { host: self.sess.host === ME ? t('common.you') : self.sess.host })));
+      else {
+        if (rs.needed.indexOf(ME) >= 0 && rs.votes[ME] === undefined) {
+          kids.push(h('div', { class: 'rb-buttons' },
+            h('button', { class: 'btn small primary', id: 'btn-agree', onclick: () => vote(true) }, icon('check'), t('game.agree')),
+            h('button', { class: 'btn small', id: 'btn-decline', onclick: () => vote(false) }, t('game.decline'))));
+        }
+        const waiting = rs.needed.filter(u => rs.votes[u] !== true);
+        if (waiting.length) kids.push(h('div', { class: 'rb-line muted' }, t('game.roundWaiting', { names: waiting.map(u => u === ME ? t('common.you') : u).join(', ') })));
+      }
+      restartBox.replaceChildren(...kids);
+    }
     function refresh() {
-      drawPlayers(); drawTabs(); drawActions(); updateStatus();
-      document.getElementById('top-title').textContent = self.mode === 'online' ? (self.sess.title || 'Online') : (self.sess.rec ? self.sess.rec.title : '');
+      drawPlayers(); drawActions(); drawInfo(); drawChat(); drawRestart(); updateStatus();
+      document.getElementById('top-title').textContent = online ? (self.sess.title || 'Online') : (self.sess.rec ? self.sess.rec.title : '');
       diceArea.querySelector('.die-btn').setAttribute('aria-label', t('game.roll'));
-      chatIn.placeholder = t('game.say');
+      if (chatIn) chatIn.placeholder = t('game.say');
     }
 
     function updateStatus() {
@@ -654,10 +821,11 @@
       hint.textContent = '';
       dieEl.wrap.classList.toggle('ready', self.phase === 'roll');
       diceArea.classList.toggle('my-turn', self.phase === 'roll' || self.phase === 'pick');
-      if (!st) { status.textContent = '…'; return; }
+      if (!st) { status.textContent = '…'; board.setActive(-1); return; }
       const c = st.turn;
+      board.setActive(st.over ? -1 : c);
       diceArea.style.setProperty('--c', 'var(--p' + c + ')');
-      if (st.over) { status.textContent = st.winner != null ? (st.seats[st.winner].user === ME && self.mode !== 'local' || (self.mode === 'local' && st.seats[st.winner].kind === 'human') ? t('game.youWin') : t('game.wins', { name: nameOf(st.winner) })) : t('game.over'); return; }
+      if (st.over) { status.textContent = st.winner == null ? t('game.over') : isMine(st.seats[st.winner]) ? t('game.youWin') : t('game.wins', { name: nameOf(st.winner) }); return; }
       const ctl = controlOf(st, c);
       if (self.phase === 'roll') {
         status.textContent = st.seats[c].kind === 'local' ? t('game.turnOf', { name: nameOf(c) }) : t('game.yourTurn');
@@ -670,38 +838,58 @@
         if (seat.kind === 'bot' || ctrl !== seat.user) status.textContent = t('game.waitingHost', { name: ctrl });
         else status.textContent = t('game.waitingFor', { name: nameOf(c) });
         if (seat.kind === 'human' && seat.user !== self.sess.host && !self.joined.has(seat.user)) hint.textContent = t('game.notJoined', { name: seat.user });
+      } else if (self.phase === 'banner' && ctl === 'me') {
+        status.textContent = st.seats[c].kind === 'local' ? t('game.turnOf', { name: nameOf(c) }) : t('game.yourTurn');
+      } else if (self.phase === 'bot' || self.phase === 'banner') {
+        status.textContent = t('game.rolling', { name: nameOf(c) });
       } else {
         status.textContent = t('game.turnOf', { name: nameOf(c) });
       }
     }
 
+    // ── turn banner: who plays now, shown on the board before the turn starts
+    async function showBanner(c, text, ms) {
+      if (!ms) return;
+      banner.style.setProperty('--c', 'var(--p' + c + ')');
+      banner.replaceChildren(h('span', { class: 'tb-token' }), h('span', { class: 'tb-text' }, text));
+      banner.classList.remove('show'); void banner.offsetWidth; banner.classList.add('show');
+      await sleep(ms);
+      banner.classList.remove('show');
+    }
+    function bannerText(c, changed) {
+      if (!changed) return t('game.again');
+      const seat = self.state.seats[c];
+      if (isMine(seat) && controlOf(self.state, c) === 'me') return t('game.yourTurnBanner');
+      return t('game.turnBanner', { name: nameOf(c) });
+    }
+
     // ── state changes
     function eventsToLog(action, events, by) {
-      const c = by;
       for (const ev of events) {
-        if (ev.type === 'move') addLog(t('game.rolled', { name: nameOf(c), roll: action.r }) + ' → ' + (ev.from < 0 ? '⬆' : '') + ' #' + (ev.token + 1), c);
-        else if (ev.type === 'pass') addLog(t('game.rolled', { name: nameOf(c), roll: action.r }) + ' – ' + t('game.noMove').toLowerCase(), c);
-        else if (ev.type === 'threeSixes') addLog(t('game.threeSixes'), c);
+        if (ev.type === 'move') addLog(t('game.rolled', { name: nameOf(by), roll: action.r }) + ' → ' + (ev.from < 0 ? '⬆' : '') + ' #' + (ev.token + 1), by);
+        else if (ev.type === 'pass') addLog(t('game.rolled', { name: nameOf(by), roll: action.r }) + ' – ' + t('game.noMove').toLowerCase(), by);
+        else if (ev.type === 'threeSixes') addLog(t('game.threeSixes'), by);
         else if (ev.type === 'capture') addLog(t('game.captured', { a: nameOf(ev.color), b: nameOf(ev.victim) }), ev.color);
+        else if (ev.type === 'selfCapture') addLog(t('game.selfCaptured', { name: nameOf(ev.color) }), ev.color);
         else if (ev.type === 'finished') addLog(t('game.finished', { name: nameOf(ev.color), place: ev.place }), ev.color);
       }
     }
 
-    async function showAction(prev, action, res, by) {
-      const sp = speed();
+    async function showAction(action, res, by) {
       dieEl.show(action.r, by);
       eventsToLog(action, res.events, by);
       const hooks = {
         step: () => Sound.play('step'),
-        capture: ev => { Sound.play('capture'); toast(t('game.captured', { a: nameOf(ev.color), b: nameOf(ev.victim) }), 'info', 1800); },
+        capture: ev => { Sound.play('capture'); toast(ev.type === 'selfCapture' ? t('game.selfCaptured', { name: nameOf(ev.color) }) : t('game.captured', { a: nameOf(ev.color), b: nameOf(ev.victim) }), 'info', 2200); },
         home: () => Sound.play('home'),
       };
       if (res.events.some(e => e.type === 'move' && e.from === -1)) Sound.play('enter');
-      await board.animate(res.state, res.events, sp.step, hooks);
+      await board.animate(res.state, res.events, sp().step, hooks);
       for (const ev of res.events) {
         if (ev.type === 'pass' || ev.type === 'threeSixes') Sound.play('nomove');
         if (ev.type === 'finished') toast(t('game.finished', { name: nameOf(ev.color), place: ev.place }), 'ok');
       }
+      drawPlayers();
     }
 
     /** Commits an action for the player to move on this device. */
@@ -713,52 +901,71 @@
       self.busy = true;
       board.setMovable(-1, []);
       self.phase = 'anim';
-      if (self.mode === 'local') {
-        self.sess.rec.actions.push(action);
-        self.sess.rec.updated = Date.now();
+      if (!online) {
+        sess.rec.actions.push(action);
+        sess.rec.updated = Date.now();
         saveLocalGames();
         self.state = res.state;
       } else {
         const msg = P.msg('move', { g: self.replay.setup.g, n: prev.n, c: by, r: action.r, t: action.t }, VERSION);
-        const text = P.encode(msg);
-        self.sess.entries.push({ author: ME, text, type: 'Application', local: true });
-        self.outbox.push(text);
-        self.replay = P.replay(self.sess.entries, self.sess.host);
+        pushOwn(msg);
         self.state = self.replay.state;
       }
       self.shownN = res.state.n;
-      await showAction(prev, action, res, by);
+      await showAction(action, res, by);
       self.busy = false;
       afterChange();
+    }
+
+    /** Sends one of our own messages: into the local log at once (replayed), and out through the outbox. */
+    function pushOwn(msg) {
+      const text = P.encode(msg);
+      sess.entries.push({ author: ME, text, type: 'Application', local: true });
+      self.outbox.push(text);
+      self.replay = P.replay(sess.entries, sess.host);
+      if (online) rememberOnline(sess.chatId, self.replay);
     }
 
     function afterChange() {
       if (self.stopped) return;
       self.lastChange = Date.now();
-      drawPlayers(); drawActions(); drawChat();
+      drawPlayers(); drawActions(); drawChat(); drawRestart();
+      if (online) maybeStartRound();
       next();
     }
 
     let nextTimer = null;
-    function next() {
+    async function next() {
       clearTimeout(nextTimer);
       const st = self.state;
       if (!st || self.busy) return;
+      const mySeq = ++self.seq;
       if (st.over) {
         self.phase = 'over';
         updateStatus(); drawActions();
-        if (!self.winnerShown) { self.winnerShown = true; setTimeout(showWinner, 500); }
+        if (!self.winnerShown) { self.winnerShown = true; setTimeout(() => showWinner(true), 600); }
         return;
       }
       const ctl = controlOf(st, st.turn);
-      if (ctl === 'me') {
-        if (self.phase !== 'roll') { self.phase = 'roll'; Sound.play('turn'); }
+      // announce the turn: who plays now (and "roll again" when the same colour goes on)
+      const changed = self.prevTurn !== st.turn;
+      if (self.bannerKey !== st.n + ':' + (online && self.replay.setup ? self.replay.setup.g : sess.rec.round)) {
+        self.bannerKey = st.n + ':' + (online && self.replay.setup ? self.replay.setup.g : sess.rec.round);
+        self.prevTurn = st.turn;
+        self.phase = ctl === 'remote' ? 'wait' : 'banner';
         updateStatus();
-        if (settings.autoRoll) nextTimer = setTimeout(() => userRoll(), speed().think);
+        if (changed && ctl === 'me' && isMine(st.seats[st.turn])) Sound.play('turn');
+        await showBanner(st.turn, bannerText(st.turn, changed), changed ? sp().banner : Math.round(sp().banner * 0.6));
+        if (mySeq !== self.seq || self.stopped || self.state !== st) return;
+      }
+      if (ctl === 'me') {
+        self.phase = 'roll';
+        updateStatus();
+        if (settings.autoRoll) nextTimer = setTimeout(() => userRoll(), sp().think);
       } else if (ctl === 'bot') {
         self.phase = 'bot';
         updateStatus();
-        nextTimer = setTimeout(botTurn, speed().think);
+        nextTimer = setTimeout(botTurn, sp().think);
       } else {
         self.phase = 'wait';
         updateStatus();
@@ -771,10 +978,11 @@
       const st = self.state;
       const r = rollDie();
       self.busy = true;
-      await dieEl.roll(r, st.turn, speed().dice);
+      await dieEl.roll(r, st.turn, sp().dice);
       self.busy = false;
       if (self.stopped || self.state !== st) return;
       const tk = AI.choose(st, r, st.seats[st.turn].level || 'normal');
+      if (tk === -1) await sleep(Math.round(sp().pause * 0.6));
       await commit({ r, t: tk });
     }
 
@@ -786,7 +994,7 @@
       self.busy = true;
       self.phase = 'rolling';
       updateStatus();
-      await dieEl.roll(r, st.turn, speed().dice);
+      await dieEl.roll(r, st.turn, sp().dice);
       self.busy = false;
       if (self.stopped || self.state !== st) return;
       const legal = R.legalMoves(st, r);
@@ -794,12 +1002,12 @@
       if (!legal.length) {
         status.textContent = R.isThirdSix(st, r) ? t('game.threeSixes') : t('game.noMove');
         hint.textContent = '';
-        await sleep(speed().pause);
+        await sleep(sp().pause);
         return commit({ r, t: -1 });
       }
       const distinct = new Set(legal.map(i => st.tokens[st.turn][i]));
       if (settings.autoMove && (legal.length === 1 || distinct.size === 1)) {
-        await sleep(Math.min(250, speed().pause));
+        await sleep(Math.min(400, sp().pause));
         return commit({ r, t: legal[0] });
       }
       self.phase = 'pick';
@@ -811,7 +1019,6 @@
       if (self.phase !== 'pick' || self.busy) return;
       if (c !== self.state.turn) return;
       if (self.legal.indexOf(i) < 0) {
-        // clicking a token stacked with a movable one: pick the movable one on the same square
         const p = self.state.tokens[c][i];
         const alt = self.legal.find(j => self.state.tokens[c][j] === p);
         if (alt == null) return;
@@ -821,7 +1028,7 @@
     }
 
     self.onSettings = patch => {
-      if (patch.autoRoll && self.phase === 'roll' && !self.busy) { clearTimeout(nextTimer); nextTimer = setTimeout(() => userRoll(), speed().think); }
+      if (patch.autoRoll && self.phase === 'roll' && !self.busy) { clearTimeout(nextTimer); nextTimer = setTimeout(() => userRoll(), sp().think); }
       if ('hints' in patch && self.phase === 'pick') board.setMovable(self.state.turn, self.legal, settings.hints);
     };
 
@@ -832,18 +1039,57 @@
       else if (/^[1-4]$/.test(e.key) && self.phase === 'pick') { const i = +e.key - 1; if (self.legal.indexOf(i) >= 0) commit({ r: self.roll, t: i }); }
     };
 
+    // ── new round
+    async function newRoundLocal(ask) {
+      const st = self.state, rec = sess.rec;
+      if (ask && !st.over && !(await confirm(t('game.newRoundConfirm'), t('game.newRound')))) return;
+      rec.rounds = rec.rounds || [];
+      rec.rounds.push({ round: rec.round || 1, over: st.over, winner: st.over ? st.winner : null, finished: st.finished.slice(), n: st.n });
+      rec.round = (rec.round || 1) + 1;
+      rec.setup = Object.assign({}, rec.setup, { first: randomFirst(rec.setup.seats) });
+      rec.actions = [];
+      rec.updated = Date.now();
+      saveLocalGames();
+      if (self.winnerDlg) self.winnerDlg.close();
+      openLocal(rec.id);
+    }
+    async function askRound(confirmFirst) {
+      if (!self.replay || !self.replay.setup) return;
+      if (confirmFirst && !(await confirm(t('game.askRoundConfirm'), t('game.askRound')))) return;
+      pushOwn(P.msg('restartAsk', { g: self.replay.setup.g }, VERSION));
+      afterChange();
+    }
+    function vote(yes) {
+      const rs = self.replay && self.replay.restart;
+      if (!rs) return;
+      pushOwn(P.msg('restartVote', { g: self.replay.setup.g, ask: rs.id, yes: !!yes }, VERSION));
+      afterChange();
+    }
+    /** The host's app starts the new round once everyone agreed (same players, rules and speed; same chat). */
+    function maybeStartRound() {
+      const rep = self.replay;
+      if (!rep || !rep.restart || !rep.restart.complete || sess.host !== ME) return;
+      const id = rep.restart.id;
+      if (self.sentRoundFor.has(id) || rep.setups.some(s => s.ask === id)) return;
+      self.sentRoundFor.add(id);
+      const s = rep.setup;
+      pushOwn(P.msg('setup', { g: P.randomId(8), seats: s.seats, rules: s.rules, speed: s.speed || self.speedId, first: randomFirst(s.seats), round: roundNo() + 1, ask: id }, VERSION));
+      self.replay = null;
+      integrate();
+    }
+
     // ── online sync
     async function poll() {
       if (self.stopped) return;
       if (document.hidden) { schedulePoll(4000); return; }
       try {
-        const res = await Net.read(self.sess.chatId, self.sess.next);
-        self.sess.next = res.next;
+        const res = await Net.read(sess.chatId, sess.next);
+        sess.next = res.next;
         let fresh = 0;
         for (const e of res.entries) {
           if (e.type === 'Join' && e.joinUsername) self.joined.add(e.joinUsername);
           if (e.type === 'Invite' && e.inviteUsername) self.invited.add(e.inviteUsername);
-          if (e.type === 'Application' && e.text) { self.sess.entries.push(e); fresh++; }
+          if (e.type === 'Application' && e.text) { sess.entries.push(e); fresh++; }
         }
         netState.textContent = self.outbox && self.outbox.size ? t('game.sending') : '';
         netState.className = 'net-state';
@@ -854,38 +1100,48 @@
         netState.textContent = t('game.offline');
         netState.className = 'net-state bad';
       }
-      schedulePoll(POLL_MS || settings.pollMs || (self.phase === 'wait' ? (Date.now() - self.lastChange < 60000 ? 1500 : 3000) : 5000));
+      schedulePoll(POLL_MS || settings.pollMs || (self.phase === 'wait' || (self.replay && self.replay.restart) ? (Date.now() - self.lastChange < 60000 ? 1500 : 3000) : 5000));
     }
     function schedulePoll(ms) { clearTimeout(self.pollTimer); if (!self.stopped) self.pollTimer = setTimeout(poll, ms); }
 
     async function integrate() {
-      const rep = P.replay(self.sess.entries, self.sess.host);
+      const rep = P.replay(sess.entries, sess.host);
       if (!rep.setup) {
         self.replay = rep;
         self.phase = 'loading';
-        status.textContent = t('game.waitingFor', { name: self.sess.host });
+        status.textContent = t('game.waitingFor', { name: sess.host });
         return;
       }
       if (rep.unknown && !self.unknown) { self.unknown = rep.unknown; toast(t('game.newProtocol'), 'warn', 8000); }
+      rememberOnline(sess.chatId, rep);
       const newGame = !self.replay || !self.replay.setup || self.replay.setup.g !== rep.setup.g;
       const prevShown = self.shownN;
-      self.replay = rep;
       if (newGame) {
         if (self.winnerDlg) self.winnerDlg.close();
+        clearTimeout(nextTimer);
+        self.seq++;
+        self.replay = rep;
+        self.speedId = speedId(rep.setup.speed || self.speedId);
         self.state = rep.state;
         self.shownN = rep.state.n;
         self.winnerShown = rep.state.over;
-        log.replaceChildren(); self.logItems = [];
+        self.prevTurn = null; self.bannerKey = null;
+        self.busy = false;
+        board.setMovable(-1, []);
+        log.replaceChildren();
+        logRound(roundNo());
         for (const item of rep.history.slice(-60)) eventsToLog(item.action, item.events, item.c);
         board.render(rep.state);
-        if (rep.state.last) board.showTrail(rep.state.last.color, []);
+        board.showTrail(0, []);
         if (rep.state.last && rep.state.last.roll) dieEl.show(rep.state.last.roll, rep.state.last.color);
+        drawInfo();
         afterChange();
         return;
       }
-      if (self.busy) return; // the running animation picks it up in afterChange
+      self.replay = rep;
+      if (self.busy) { drawChat(); drawRestart(); drawActions(); return; } // the running animation picks it up in afterChange
       const pending = rep.history.filter(x => x.n >= prevShown);
-      if (!pending.length) { self.state = rep.state; drawChat(); drawPlayers(); return; }
+      if (!pending.length) { self.state = rep.state; drawChat(); drawPlayers(); drawRestart(); drawActions(); maybeStartRound(); return; }
       if (pending.length > 6) { // too many to animate: jump
         self.state = rep.state; self.shownN = rep.state.n;
         for (const item of pending) eventsToLog(item.action, item.events, item.c);
@@ -894,89 +1150,80 @@
         return;
       }
       self.busy = true;
+      clearTimeout(nextTimer);
+      self.seq++;
       board.setMovable(-1, []);
       let st = self.state;
       for (const item of pending) {
         if (self.stopped) return;
         const res = R.apply(st, item.action);
         const by = st.turn;
+        if (by !== self.prevTurn) {
+          self.prevTurn = by;
+          self.state = st;
+          updateStatus();
+          await showBanner(by, bannerText(by, true), sp().banner);
+        } else {
+          await sleep(Math.round(sp().think / 2));
+        }
         self.state = res.state;
         self.shownN = res.state.n;
-        await sleep(item === pending[0] ? 0 : speed().think / 2);
-        await dieEl.roll(item.action.r, by, speed().dice);
-        await showAction(st, item.action, res, by);
+        await dieEl.roll(item.action.r, by, sp().dice);
+        await showAction(item.action, res, by);
         st = res.state;
       }
-      self.state = rep.state;
+      self.state = self.replay.state;
+      self.bannerKey = null;
       self.busy = false;
       afterChange();
     }
 
     function sendSay() {
       const text = chatIn.value.trim();
-      if (!text || self.mode !== 'online' || !self.replay || !self.replay.setup) return;
+      if (!text || !online || !self.replay || !self.replay.setup) return;
       chatIn.value = '';
-      const msgText = P.encode(P.msg('say', { g: self.replay.setup.g, text }, VERSION));
-      self.sess.entries.push({ author: ME, text: msgText, type: 'Application', local: true });
-      self.outbox.push(msgText);
-      self.replay = P.replay(self.sess.entries, self.sess.host);
+      pushOwn(P.msg('say', { g: self.replay.setup.g, text }, VERSION));
       drawChat();
     }
 
     async function resign() {
       if (!(await confirm(t('game.resignConfirm'), t('game.resign')))) return;
       const mine = self.state.seats.findIndex(s => s && s.kind === 'human' && s.user === ME);
-      const text = P.encode(P.msg('resign', { g: self.replay.setup.g, c: mine, after: self.state.n }, VERSION));
-      self.sess.entries.push({ author: ME, text, type: 'Application', local: true });
-      self.outbox.push(text);
-      self.replay = P.replay(self.sess.entries, self.sess.host);
+      pushOwn(P.msg('resign', { g: self.replay.setup.g, c: mine, after: self.state.n }, VERSION));
       board.setMovable(-1, []);
       self.phase = 'wait';
       afterChange();
     }
 
     // ── winner
-    function showWinner() {
+    function showWinner(auto) {
       const st = self.state;
       if (!st || !st.over) return;
+      const rs = online && self.replay ? self.replay.restart : null;
+      if (auto === true && rs && !rs.declinedBy && !rs.complete) return; // a new-round question is already open – answer that first
       Sound.play('win');
       const order = st.finished.concat([0, 1, 2, 3].filter(c => st.seats[c] && st.finished.indexOf(c) < 0).sort((a, b) => R.progress(st, b) - R.progress(st, a)));
-      const iWon = self.mode === 'online' ? st.seats[st.winner].user === ME : st.seats[st.winner].kind !== 'bot';
-      const canRematch = self.mode === 'local' || self.sess.host === ME;
+      const iWon = isMine(st.seats[st.winner]);
+      const isPlayer = online ? st.seats.some(s => s && s.kind === 'human' && s.user === ME) : true;
       if (self.winnerDlg) self.winnerDlg.close();
       const d = self.winnerDlg = dialog({
         title: t('game.over'), icon: 'trophy', cls: 'dlg-winner', onClose: () => { if (self.winnerDlg === d) self.winnerDlg = null; },
-        body: [h('div', { class: 'winner-hero', style: { '--c': 'var(--p' + st.winner + ')' } }, h('div', { class: 'winner-token' }), h('h2', null, iWon && st.seats[st.winner].kind !== 'local' ? t('game.youWin') : t('game.wins', { name: nameOf(st.winner) }))),
-          h('ol', { class: 'ranking' }, order.map((c, k) => h('li', { style: { '--c': 'var(--p' + c + ')' } }, h('span', { class: 'medal m' + (k + 1) }, String(k + 1)), h('span', { class: 'chip', style: { background: 'var(--p' + c + ')' } }), nameOf(c)))),
-          canRematch ? null : h('p', { class: 'hint center' }, t('game.rematchHost', { name: self.sess.host }))],
+        body: [h('div', { class: 'winner-hero', style: { '--c': 'var(--p' + st.winner + ')' } }, h('div', { class: 'winner-token' }), h('h2', null, iWon ? t('game.youWin') : t('game.wins', { name: nameOf(st.winner) }))),
+          h('ol', { class: 'ranking' }, order.map((c, k) => h('li', { style: { '--c': 'var(--p' + c + ')' } }, h('span', { class: 'medal m' + (k + 1) }, String(k + 1)), chip(c), nameOf(c))))],
         footer: [h('button', { class: 'btn', onclick: () => { d.close(); leaveToHome(); } }, icon('home'), t('game.backHome')),
-          canRematch ? h('button', { class: 'btn primary', onclick: () => { d.close(); rematch(); } }, icon('play'), t('game.rematch')) : null],
+          isPlayer ? h('button', { class: 'btn primary', id: 'btn-rematch', onclick: () => { d.close(); if (online) askRound(false); else newRoundLocal(false); } }, icon('play'), online ? t('game.askRound') : t('game.rematch')) : null],
       });
       if (iWon) confetti();
     }
-    async function rematch() {
-      if (self.mode === 'local') {
-        const s = self.sess.rec.setup;
-        startLocal({ seats: s.seats, rules: s.rules, first: randomFirst(s.seats) }, self.sess.rec.title);
-      } else {
-        const s = self.replay.setup;
-        const setup = P.msg('setup', { g: P.randomId(8), seats: s.seats, rules: s.rules, first: randomFirst(s.seats) }, VERSION);
-        const text = P.encode(setup);
-        self.sess.entries.push({ author: ME, text, type: 'Application', local: true });
-        self.outbox.push(text);
-        self.replay = null;
-        await integrate();
-      }
-    }
 
     // ── start
-    drawTabs(); drawActions();
-    if (sess.mode === 'local') {
+    drawActions();
+    if (!online) {
       self.state = sess.state;
       self.shownN = sess.state.n;
       self.winnerShown = sess.state.over;
       board.render(sess.state);
-      // rebuild the move list of a resumed game (the last 60 actions)
+      logRound(sess.rec.round || 1);
       try {
         let s = R.newGame(sess.setup);
         const acts = sess.rec.actions;
@@ -996,7 +1243,6 @@
           if (c) { sess.title = c.title; document.getElementById('top-title').textContent = c.title; (c.members || []).forEach(u => self.invited.add(u)); }
         } catch (e) { /* title is optional */ }
       })();
-      // initial load: read everything, then keep polling
       (async () => {
         try {
           const res = await Net.read(sess.chatId, 0);
@@ -1046,7 +1292,7 @@
 
   // ───────────────────────────── confetti ─────────────────────────────
   function confetti() {
-    if (settings.anim === 'instant') return;
+    if (game && game.speedId === 'instant') return;
     const cv = h('canvas', { class: 'confetti' });
     document.body.appendChild(cv);
     const W = cv.width = innerWidth, H = cv.height = innerHeight, ctx = cv.getContext('2d');
@@ -1089,6 +1335,6 @@
     root.addEventListener('beforeunload', () => { settingsDoc.flushNow(); gamesDoc.flushNow(); });
   }
 
-  L.App = { boot, settings: () => settings, set, THEMES, get game() { return game; }, openSettings, openNotes, renderHome };
+  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame, FULLSCREEN_OK };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })(window);

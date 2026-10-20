@@ -57,6 +57,7 @@
     safeSquares: true,       // start squares and stars protect tokens
     threeTries: true,        // up to 3 rolls while no token is out of the yard
     endMode: 'first',        // 'first' = the first player home wins | 'all' = play on for all places
+    selfKick: false,         // one token per square: landing on your own token sends that token back to the yard
   });
 
   function normalizeRules(r) {
@@ -217,6 +218,14 @@
         for (const [oc, j] of captured) {
           events.push({ type: 'capture', color: c, victim: oc, token: j, from: s.tokens[oc][j] });
           s.tokens[oc][j] = -1;
+        }
+        if (s.rules.selfKick && move.to >= 0 && move.to < FINISH) {
+          for (let j = 0; j < 4; j++) {
+            if (j !== t && s.tokens[c][j] === move.to) {
+              events.push({ type: 'selfCapture', color: c, token: j, from: move.to });
+              s.tokens[c][j] = -1;
+            }
+          }
         }
         if (move.to === FINISH) {
           reachedHome = true;

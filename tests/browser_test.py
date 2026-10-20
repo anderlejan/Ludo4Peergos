@@ -49,7 +49,7 @@ def new_page(browser, user, extra='', vp=(1400, 860)):
 
 
 def fast(pg, **extra):
-    s = {'anim': 'instant', 'autoRoll': True, 'autoMove': True, 'sound': False}
+    s = {'anim': 'instant', 'autoRoll': True, 'autoMove': True, 'sound': False, 'confirmLeave': False}
     s.update(extra)
     pg.evaluate('s => L4P.App.set(s)', s)
 
@@ -101,10 +101,55 @@ def main():
             games = json.loads(data.get('local-games.json', '{"games":[]}'))['games']
             ok('the game is saved in the data folder', len(games) == 1 and len(games[0]['actions']) > 50, str(len(games)))
             ok('no script errors (local game)', not pg.errors, '; '.join(pg.errors[:3]))
-            pg.keyboard.press('Escape')
+            # new round with the same players, in the same saved game (0.2.0)
+            rec_id = pg.evaluate('L4P.App.game.sess.rec.id')
+            pg.evaluate("document.getElementById('btn-rematch').click()")
+            pg.wait_for_function('L4P.App.game && L4P.App.game.sess.rec && L4P.App.game.sess.rec.round === 2')
+            rec = pg.evaluate('(() => { const r = L4P.App.game.sess.rec; return {id: r.id, round: r.round, rounds: r.rounds.length, actions: r.actions.length, over: L4P.App.game.state.over}; })()')
+            ok('play again = round 2 of the same game', rec['id'] == rec_id and rec['rounds'] == 1 and not rec['over'], json.dumps(rec))
+            ok('round 1 result kept (wins shown)', pg.locator('.pl-wins').count() == 4)
+            # new round during a running game (asks first)
+            pg.evaluate("document.getElementById('btn-new-round').click()")
+            pg.wait_for_selector('.dlg-small .btn.primary')
+            pg.click('.dlg-small .btn.primary')
+            pg.wait_for_function('L4P.App.game.sess.rec.round === 3')
+            ok('new round during the game = round 3, still one saved game', pg.evaluate('L4P.App.game.sess.rec.rounds.length') == 2)
             pg.click('.game-actions .btn:last-child')
             pg.wait_for_selector('.game-card')
-            ok('home lists the saved game', pg.locator('.game-card').count() >= 1)
+            ok('home lists the saved game once', pg.locator('.game-card').count() == 1)
+            ok('home card describes the setup (players, colour, speed, rules, round)', all(x in pg.inner_text('.game-card') for x in ('You: Red', 'Speed: Instant', 'Rules: standard rules', 'Round 3', 'Computer · Normal')), pg.inner_text('.game-card'))
+
+            print('1b. quick game with 1 opponent and the saved settings; rules and speed locked in the game')
+            pg.evaluate("L4P.App.set({level: 'hard', anim: 'fast', rules: Object.assign({}, L4P.Rules.DEFAULT_RULES, {selfKick: true})})")
+            pg.evaluate("document.getElementById('quick-1').click()")
+            pg.wait_for_function('L4P.App.game && L4P.App.game.state')
+            setup = pg.evaluate('L4P.App.game.sess.rec.setup')
+            ok('one opponent sits opposite (red vs yellow), level hard', setup['seats'][1] is None and setup['seats'][3] is None and setup['seats'][2]['kind'] == 'bot' and setup['seats'][2]['level'] == 'hard', json.dumps(setup['seats']))
+            ok('saved rules and speed used', setup['rules']['selfKick'] is True and setup['speed'] == 'fast')
+            pg.evaluate("L4P.App.set({anim: 'slow', rules: Object.assign({}, L4P.Rules.DEFAULT_RULES)})")
+            ok('changing settings does not change the running game', pg.evaluate('L4P.App.game.speedId') == 'fast' and pg.evaluate('L4P.App.game.currentRules().selfKick') is True)
+            pg.click('#btn-settings')
+            pg.click('.set-tab[data-sec="rules"]')
+            ok('rules shown read-only during the game', pg.locator('.set-pane .rules.read-only input:disabled').count() == 7 and pg.locator('.set-pane .rules.read-only .seg-btn:disabled').count() == 4 and pg.locator('.lock-note').count() == 1)
+            pg.click('.set-tab[data-sec="look"]')
+            ok('speed locked during the game', pg.locator('#field-speed .seg-btn:disabled').count() == 4)
+            ok('full-screen switch available outside Peergos', pg.evaluate('L4P.App.FULLSCREEN_OK') is True)
+            pg.keyboard.press('Escape')
+            pg.click('#btn-game-rules')
+            txt = pg.inner_text('.dlg-help')
+            ok('How to play shows this game\'s rules (one token per square)', 'Rules of this game' in txt and 'One token per square' in txt and 'Speed: Fast' in txt, txt[:200])
+            if SHOTS:
+                pg.screenshot(path=os.path.join(SHOTS, 'help-game.png'))
+            pg.keyboard.press('Escape')
+            if SHOTS:
+                pg.screenshot(path=os.path.join(SHOTS, 'quick-1.png'))
+            pg.evaluate("L4P.App.set({level: 'normal', anim: 'instant', quickOpponents: 3})")
+            pg.click('.game-actions .btn:last-child')
+            pg.wait_for_selector('.game-card')
+            pg.click('#btn-help')
+            txt = pg.inner_text('.dlg-help')
+            ok('How to play from the menu shows the rules for new games', 'Rules for new games' in txt and 'Your own tokens may share a square' in txt, txt[:200])
+            pg.keyboard.press('Escape')
 
             print('2. settings saved at once and restored')
             pg.click('#btn-settings')
@@ -154,7 +199,26 @@ def main():
             sa = a.evaluate('JSON.stringify(L4P.App.game.state.tokens) + "|" + L4P.App.game.state.n')
             sb = b.evaluate('JSON.stringify(L4P.App.game.state.tokens) + "|" + L4P.App.game.state.n')
             ok('both players end in the same state', sa == sb, sa + ' vs ' + sb)
-            ok('chat message arrived at alice', 'Ahoj' in a.inner_text('.side'))
+            ok('chat message arrived at alice (chat panel on the right)', 'Ahoj' in a.inner_text('.side-right'))
+            # new round in the same chat: bob asks, alice agrees, alice's app (host) starts it
+            end = time.time() + 10
+            while time.time() < end and not b.evaluate("!!document.getElementById('btn-rematch')"):
+                time.sleep(0.2)
+            ok('the winner dialog offers bob a new round', b.evaluate("!!document.getElementById('btn-rematch')"))
+            b.evaluate("document.getElementById('btn-rematch').click()")
+            end = time.time() + 60
+            while time.time() < end and not a.evaluate("!!document.getElementById('btn-agree')"):
+                time.sleep(0.2)
+            ok('alice is asked to agree', a.evaluate("!!document.getElementById('btn-agree')"))
+            time.sleep(0.5)
+            ok('the question is not hidden behind alice\'s results dialog', a.locator('.dlg-winner').count() == 0)
+            a.evaluate("document.getElementById('btn-agree').click()")
+            end = time.time() + 60
+            while time.time() < end and not (a.evaluate('L4P.App.game.replay.rounds.length') == 2 and b.evaluate('L4P.App.game.replay.rounds.length') == 2):
+                time.sleep(0.2)
+            ok('round 2 started on both sides', a.evaluate('L4P.App.game.replay.rounds.length') == 2 and b.evaluate('L4P.App.game.replay.rounds.length') == 2)
+            ok('chat kept across rounds', 'Ahoj' in b.inner_text('.side-right') and 'Round 2' in b.inner_text('.side-right'))
+            ok('wins of round 1 shown', a.locator('.pl-wins').count() == 3)
             if SHOTS:
                 a.screenshot(path=os.path.join(SHOTS, 'online-alice-end.png'))
                 b.screenshot(path=os.path.join(SHOTS, 'online-bob-end.png'))
