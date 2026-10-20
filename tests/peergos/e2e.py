@@ -132,13 +132,15 @@ def app_frame(page):
 
 
 def launch(page):
-    goto_view(page, 'Launcher', 'launchApp', '__launcher')
+    goto_view(page, 'Launcher', 'launchAppFromUI', '__launcher')  # NewsFeed has a launchApp too
+    # the launcher loads the installed apps after it shows; launching before that fails inside Peergos
+    wait(lambda: page.evaluate("!window.__launcher.showSpinner && Array.isArray(window.__launcher.appsList) && window.__launcher.appsList.some(a => a.name === 'ludo4peergos')"), 'the launcher to list the app', 60)
     page.evaluate("window.__launcher.launchApp('ludo4peergos')")
     return wait(lambda: (lambda f: f if f and f.evaluate("!!(window.L4P && window.L4P.App && document.getElementById('main'))") else None)(app_frame(page)), 'the app to start', 120)
 
 
 def close_app(page):
-    page.evaluate("() => { const q = [window.__launcher]; while (q.length) { const c = q.shift(); if (c && typeof c.closeSandbox === 'function') { c.closeSandbox(); return; } if (c) q.push(..." + VUE + ".children(c)); } }")
+    page.evaluate("() => { const c = " + VUE + ".find('closeSandbox'); if (c) c.closeSandbox(); }")
     wait(lambda: page.evaluate("!document.querySelector('#sandboxId')"), 'the app to close', 60)
 
 
@@ -153,6 +155,10 @@ def main():
             pg = ctx.new_page()
             pg.on('pageerror', lambda e, u=u: errors[u].append('pageerror: ' + str(e)))
             pg.on('console', lambda m, u=u: errors[u].append(m.text) if m.type == 'error' and ('L4P' in m.text or 'app.js' in m.text or 'Ludo' in m.text) else None)
+            # record Peergos' own error toasts (e.g. "CAS exception updating cryptree node") in the main page
+            pg.add_init_script("""if (window.top === window) { window.__pgErrors = []; new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) {
+                const t = (n.textContent || ''); if (/CAS exception|concurrent modification/i.test(t) && window.__pgErrors.length < 50) window.__pgErrors.push({t: Date.now(), text: t.slice(0, 160)}); } })
+                .observe(document, {childList: true, subtree: true}); }""")
             pages[u] = pg
         print('1. sign in and install from the ZIP', flush=True)
         for u in (alice, bob):
@@ -170,8 +176,8 @@ def main():
         ok('running inside Peergos (data + chat available)', fa.evaluate('L4P.Storage.PEERGOS && L4P.Net.available') is True)
         ok('username passed in', fa.evaluate('L4P.Storage.username') == alice)
         ok('the installed app is the tested version', fa.evaluate('L4P.VERSION') == json.load(open(os.path.join(os.path.dirname(__file__), '..', '..', 'peergos-app.json')))['version'])
-        fs = fa.evaluate("({ok: L4P.App.FULLSCREEN_OK, enabled: document.fullscreenEnabled, hidden: document.getElementById('btn-full').hidden})")
-        ok('full screen is not allowed for apps in Peergos; the button stays hidden', fs['ok'] is False and fs['enabled'] is False and fs['hidden'] is True, fs)
+        fs = fa.evaluate("({enabled: document.fullscreenEnabled, button: !!document.getElementById('btn-full')})")
+        ok('full screen is not allowed for apps in Peergos; the app has no full-screen button', fs['enabled'] is False and fs['button'] is False, fs)
         try:
             fa.evaluate("document.documentElement.requestFullscreen()")
             ok('requestFullscreen is refused inside the sandbox', False, 'it was accepted')
@@ -211,6 +217,7 @@ def main():
 
         print('5. bob joins from the News feed', flush=True)
         b = pages[bob]
+        feed_from = b.evaluate('Date.now()')
         goto_view(b, 'Newsfeed', 'joinConversation', '__feed')
 
         def join_button():
@@ -226,7 +233,9 @@ def main():
         b.evaluate("[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Join').click()")
         fb = wait(lambda: (lambda f: f if f and f.evaluate("!!(window.L4P && L4P.App && L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup)") else None)(app_frame(b)), 'the game to open for bob', 180)
         ok('bob opened the game via Join', fb.evaluate("L4P.App.game.sess.chatId") == chat)
+        feed_to = b.evaluate('Date.now()')
         fb.evaluate("L4P.App.set({anim: 'instant', autoRoll: true, autoMove: true, sound: false, pollMs: 600})")
+        fa.evaluate("window.__snd = []; const p0 = L4P.Sound.play; L4P.Sound.play = n => { window.__snd.push(n); return p0(n); }")
         fb.evaluate("() => { const i = document.querySelector('.chat-input .text-in'); i.value = 'Hello from bob'; i.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter'})); }")
         shot(b, 'game-5-bob-joined')
 
@@ -259,6 +268,7 @@ def main():
         ok('the game ended on both sides', 'over=true' in sa and 'over=true' in sb, sa + ' / ' + sb)
         ok('both sides have the same final state', sa == sb, sa + ' / ' + sb)
         ok('bob\'s chat line reached alice', 'Hello from bob' in fa.inner_text('.side-right'))
+        ok('alice heard the chat sound', 'chat' in fa.evaluate('window.__snd'))
         shot(a, 'game-6-alice-end')
         print('7. new round in the same chat (bob asks, alice agrees, her app starts it)', flush=True)
         wait(lambda: fb.evaluate("!!document.getElementById('btn-rematch')"), 'the winner dialog for bob', 30)
@@ -274,8 +284,45 @@ def main():
         shot(a, 'game-8-rules')
         fa.evaluate("UI_close = document.querySelector('.dlg-help .dlg-close'); UI_close && UI_close.click()")
         shot(b, 'game-6-bob-end')
+
+        print('8. the game a friend started stays in bob\'s list; bob leaves the game', flush=True)
+        close_app(b)
+        fb = launch(b)  # from the launcher, not from the News feed
+        wait(lambda: fb.evaluate("!!document.querySelector('#games-list .game-card[data-chat]')"), 'the game in bob\'s list', 90)
+        ok('bob\'s menu lists the game alice started', fb.evaluate("[...document.querySelectorAll('#games-list .game-card[data-chat]')].some(e => e.dataset.chat === %s)" % json.dumps(chat)))
+        stored = fb.evaluate("fetch('/peergos-api/v0/data/online-games.json').then(r => r.ok ? r.text() : '')")
+        ok('the game is remembered in bob\'s data folder', chat in stored, stored[:200])
+        shot(b, 'game-9-bob-list')
+        fb.evaluate("s => [...document.querySelectorAll('#games-list .game-card[data-chat]')].find(e => e.dataset.chat === s).click()", chat)
+        wait(lambda: fb.evaluate("!!(L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup && document.getElementById('btn-leave'))"), 'bob back in the game', 120)
+        fb.evaluate("L4P.App.set({anim: 'instant', sound: false, pollMs: 600})")
+        fb.evaluate("document.getElementById('btn-leave').click()")
+        fb.wait_for_selector('.dlg-small .btn.primary')
+        fb.click('.dlg-small .btn.primary')
+        wait(lambda: fb.evaluate("!!document.querySelector('#games-list .game-card[data-chat]') && document.getElementById('games-list').innerText.includes('You left')"), 'bob back in the menu, game marked as left', 120)
+        ok('bob is back in the menu, the game is marked "You left"', True)
+        wait(lambda: 'left the game' in fa.inner_text('.side-right'), 'alice to see that bob left', 180)
+        ok('alice sees that bob left (chat line)', True)
+        ok('alice heard the leave sound', 'leave' in fa.evaluate('window.__snd'))
+        yellow = fa.evaluate("L4P.App.game.state.seats.findIndex(s => s && s.user === %s)" % json.dumps(bob))
+        n0 = fa.evaluate('L4P.App.game.state.n')
+        def host_plays_bob():
+            st = fa.evaluate("(() => { const g = L4P.App.game; if (g.phase === 'roll') document.getElementById('die').click(); if (g.phase === 'pick') { const t = document.querySelector('.tok.pickable'); if (t) t.dispatchEvent(new MouseEvent('click', {bubbles: true})); } return g.replay.history.some(h => h.c === %d && h.n >= %d && h.author === %s); })()" % (yellow, n0, json.dumps(alice)))
+            return st
+        wait(host_plays_bob, 'alice\'s computer to play bob\'s colour', 300, 1)
+        ok('alice\'s app plays bob\'s colour after he left', True)
+        shot(a, 'game-10-alice-after-leave')
+        shot(b, 'game-11-bob-left')
         for u in (alice, bob):
             ok('no app script errors for ' + u, not errors[u], errors[u][:5])
+            pe = pages[u].evaluate('window.__pgErrors || []')
+            # Peergos' own News feed refresh (bob waits there for the invitation, refreshing it) can raise this error
+            # with no app running – seen 2026-10-20 with 1.39.0. Report those, fail only on the others.
+            feed = [e for e in pe if u == bob and feed_from <= e['t'] <= feed_to]
+            other = [e for e in pe if e not in feed]
+            if feed:
+                print('    (Peergos error toast during the News feed / Join phase, not from the app: %s)' % feed[0]['text'][:90], flush=True)
+            ok('no Peergos CAS / concurrent-modification error toasts while the app runs, for ' + u, not other, [e['text'] for e in other[:3]])
         browser.close()
     print('FAILED: ' + ', '.join(failures) if failures else 'ALL OK')
     sys.exit(1 if failures else 0)

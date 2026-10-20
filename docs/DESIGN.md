@@ -34,7 +34,11 @@ tools/make_release.py   builds releases/Ludo4Peergos-v<ver>.zip + source zip, ch
 - A capture and a token reaching home also give another roll.
 - Home needs the exact number. The game ends when the first player has all four tokens home
   (option: play on for all places).
-- Option `selfKick` (off by default): one token per square – landing on your own token sends that token to the yard.
+- Option `onePerSquare` (off by default, 0.3.0): one token per square for every token – landing on any token, own or
+  opponent's, sends it to its yard; safe squares do not protect then (`Rules.protects`). An opponent hit counts as a
+  capture (bonus roll), an own token does not. Opponents' home columns are never reached.
+- Legacy option `selfKick` (0.2.0, own tokens only, safe squares still protect) stays in the engine so old games replay
+  the same way; Settings turn a saved `selfKick` into `onePerSquare`.
 - Rules and speed belong to the game (`setup.rules`, `setup.speed`) and never change while it runs; Settings only
   holds the defaults for new games.
 
@@ -49,7 +53,8 @@ Text of each chat message: `L4P1 ` + base64url(UTF-8 JSON). JSON always has `v` 
 |---|---|---|
 | `setup` | host (chat owner) | `seats[4]` (`null` or `{kind:'human'|'bot', user, level, name}`), `rules`, `first`, `speed`, `round`, `ask` (the new-round question it answers) |
 | `move` | the player whose turn it is (host for computer seats) | `n` (move number), `c` (colour), `r` (roll), `t` (token or -1) |
-| `resign` | a human player | `c`, `after` (their move counter when resigning) |
+| `resign` | a human player (0.1/0.2 apps) | `c`, `after` (their move counter when resigning) – this game only |
+| `leave` | a human player | `c`, `after` – leaves the whole chat (all rounds); from the host it ends the game |
 | `say` | anyone | `text` (short chat line / emoji) |
 | `restartAsk` | a human player | asks for a new round of the current game `g` |
 | `restartVote` | a human player | `ask` (id of the question), `yes` (false closes the question) |
@@ -59,13 +64,19 @@ order in every member's copy). Moves of that game are applied in move-number ord
 the state is at `n`, the colour is to play, the author controls that seat and the move is legal. Messages that
 arrive early wait in a pool. Because only one author can ever make move `n`, the result does not depend on the
 order in which Peergos merges the members' logs. A resigned seat is played by the host's computer from move
-`after` on. The roller rolls on their own device (crypto random) – fine among friends.
+`after` on. `leave` works like `resign` for the round it names and from move 0 in every later round (a new round the
+host started before it saw the leave); new rounds give left players' seats to computer players. When the host leaves,
+`replay` sets `hostLeft` and every app stops the game (nobody else can run the computer players). The roller rolls on
+their own device (crypto random) – fine among friends.
 
 New round: when every human player who still plays himself (not handed over) has agreed (the asker counts as yes),
 the host's app sends a new `setup` with the same seats, rules and speed, `round + 1` and `ask` = the question's id; it
 checks first that no setup for that question exists. Every round of the chat is replayed (`rounds`: results, wins).
 Protocol version 2 (app 0.2.0) added `speed`, `round`, `ask`, the restart messages and the rule `selfKick`; a 0.1.0 app
-ignores protocol-2 messages and asks its user to update.
+ignores protocol-2 messages and asks its user to update. Protocol 3 (app 0.3.0) added `leave` and the rule
+`onePerSquare`; 0.2.0 apps ignore protocol-3 messages and ask to update. Each message carries the lowest protocol
+that understands it (`setup` and `leave` = 3, everything else = 2), so a 0.3.0 player can still play in a game a
+0.2.0 host started (only a `leave` is not seen by that host).
 
 Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns.
 
@@ -73,6 +84,8 @@ Who runs the computer players online: the host's app. If the host is offline, th
 - `data/settings.json` – all settings, written ~250 ms after each change (localStorage keeps a copy for an
   instant start; the data folder is the truth and follows the user to other devices).
 - `data/local-games.json` – saved local games (setup + list of actions), the newest 30.
+- `data/online-games.json` – online games this user created or opened (`{chatId: {title, added, opened}}`, deleted
+  ones as `{removed}`), so they stay in the menu even when Peergos' chat lists leave them out.
 - `data/user-notes.json`, `data/notes-texts/*.md` – User notes module.
 
 ## Peergos facts this relies on
@@ -82,5 +95,11 @@ Who runs the computer players online: the host's app. If the host is offline, th
   "add friends" dialog; invited friends get the invitation in their News feed and open the game with **Join**, which
   launches the app with `?chatId=`. Every read (`GET /peergos-api/v1/chat/<id>?startIndex=`) merges the other
   members' message logs, so new moves arrive by polling.
+- The chat list: `GET /peergos-api/v1/chat/` (with members) leaves out chats whose recent-message list is empty;
+  `GET /peergos-api/v0/chat/` lists every chat of the app. The app asks both and shows the union, plus remembered games.
+- Every Peergos API call (chat and data folder) goes through one queue, `Storage.api` (one request at a time, body
+  read inside the step) – a safeguard: chat reads merge other members' logs into the user's tree. The red Peergos
+  toast "CAS exception updating cryptree node" seen in tests came from Peergos' News feed refresh with no app running
+  (`tests/peergos/probe_cas_game.py`: 0 errors from the app in 6 close/reopen cycles during a live game).
 - Each member's log is append-only and keeps every author's own order, but messages of different authors can
   be merged in a different order on each device – hence the order-independent protocol above.

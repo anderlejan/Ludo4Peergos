@@ -26,7 +26,7 @@
   function danger(state, color, rel) {
     if (rel < 0 || rel > R.LAST_TRACK) return 0;
     const cell = R.trackIndex(color, rel);
-    if (state.rules.safeSquares && R.isSafeCell(cell)) return 0;
+    if (R.protects(state.rules, cell)) return 0;
     return threatsTo(state, color, cell);
   }
 
@@ -37,14 +37,14 @@
     let s = 0;
     const caps = R.capturesAt(state, c, to);
     for (const [oc, j] of caps) s += 120 + state.tokens[oc][j] * 1.6; // hurting an advanced token is worth more
-    if (state.rules.selfKick && to < R.FINISH) {
+    if ((state.rules.selfKick || state.rules.onePerSquare) && to < R.FINISH) {
       for (let j = 0; j < 4; j++) if (j !== token && state.tokens[c][j] === to) s -= 75 + to * 1.6; // would send our own token home
     }
     if (from === -1) s += 70;
     if (to === R.FINISH) s += 90;
     else if (to > R.LAST_TRACK && from <= R.LAST_TRACK) s += 55;     // into the home column: safe for good
     const cellTo = to <= R.LAST_TRACK ? R.trackIndex(c, to) : -1;
-    if (cellTo >= 0 && state.rules.safeSquares && R.isSafeCell(cellTo)) s += 22;
+    if (cellTo >= 0 && R.protects(state.rules, cellTo)) s += 22;
     s += to * 0.45;                                                   // general progress
 
     if (level !== 'easy') {
@@ -65,7 +65,7 @@
               if (q < 0 || q > R.LAST_TRACK) continue;
               const cell = R.trackIndex(oc, q);
               const gap = (cell - cellTo + R.TRACK_LEN) % R.TRACK_LEN;
-              if (gap >= 1 && gap <= 6 && !(state.rules.safeSquares && R.isSafeCell(cell))) s += 7;
+              if (gap >= 1 && gap <= 6 && !R.protects(state.rules, cell)) s += 7;
             }
           }
         }

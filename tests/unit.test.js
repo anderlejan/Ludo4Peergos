@@ -282,6 +282,8 @@ test('selfKick games still finish (500 bot games)', () => {
 });
 
 test('normalizeRules keeps the new option and ignores junk', () => {
+  assert.strictEqual(R.normalizeRules({ onePerSquare: 1 }).onePerSquare, true);
+  assert.strictEqual(R.normalizeRules({}).onePerSquare, false);
   assert.strictEqual(R.normalizeRules({ selfKick: 1 }).selfKick, true);
   assert.strictEqual(R.normalizeRules({}).selfKick, false);
   assert.ok(!('evil' in R.normalizeRules({ evil: true })));
@@ -341,6 +343,94 @@ test('protocol: messages of a newer protocol are counted, not applied', () => {
   m.v = P.PROTOCOL + 1;
   const rep = P.replay([{ author: 'a', text: P.encode(m) }], 'a');
   assert.strictEqual(rep.unknown, 1); assert.strictEqual(rep.setup, null);
+});
+
+test('rule onePerSquare: landing on ANY token sends it to its yard, safe squares do not protect', () => {
+  const s = R.newGame(Object.assign(four(), { rules: { onePerSquare: true } }));
+  // green token on red's start square (green rel 39 = track cell 0) – red enters with a 6
+  s.tokens[1] = [39, -1, -1, -1];
+  s.tokens[0] = [0 + 0, -1, -1, -1].map((x, i) => (i === 0 ? 0 : -1));
+  let res = R.apply(s, { r: 6, t: 1 });
+  assert.deepStrictEqual(res.state.tokens[0], [-1, 0, -1, -1], 'own token on start kicked');
+  assert.deepStrictEqual(res.state.tokens[1], [-1, -1, -1, -1], 'opponent on start kicked');
+  assert.ok(res.events.some(e => e.type === 'selfCapture') && res.events.some(e => e.type === 'capture'));
+  // a star (track cell 8) does not protect either
+  const s2 = R.newGame(Object.assign(four(), { rules: { onePerSquare: true } }));
+  s2.tokens[0] = [5, -1, -1, -1];
+  s2.tokens[2] = [(8 - 26 + 52) % 52, -1, -1, -1]; // yellow on cell 8
+  res = R.apply(s2, { r: 3, t: 0 });
+  assert.strictEqual(res.state.tokens[2][0], -1);
+  // without the rule the star protects and the start square protects
+  const s3 = R.newGame(four());
+  s3.tokens[0] = [5, -1, -1, -1]; s3.tokens[2] = [34, -1, -1, -1];
+  assert.strictEqual(R.apply(s3, { r: 3, t: 0 }).state.tokens[2][0], 34);
+  // safeSquares off on its own still only hits opponents
+  const s4 = R.newGame(Object.assign(four(), { rules: { safeSquares: false } }));
+  s4.tokens[0] = [5, 8, -1, -1];
+  assert.deepStrictEqual(R.apply(s4, { r: 3, t: 0 }).state.tokens[0], [8, 8, -1, -1]);
+  // home column tokens of others are never hit; own token in the home column is kicked
+  const s5 = R.newGame(Object.assign(four(), { rules: { onePerSquare: true } }));
+  s5.tokens[0] = [50, 53, -1, -1];
+  assert.deepStrictEqual(R.apply(s5, { r: 3, t: 0 }).state.tokens[0], [53, -1, -1, -1]);
+  // capture bonus counts for an opponent, not for an own token
+  const s6 = R.newGame(Object.assign(four(), { rules: { onePerSquare: true } }));
+  s6.tokens[0] = [5, 8, -1, -1];
+  assert.strictEqual(R.apply(s6, { r: 3, t: 0 }).state.turn, 1);
+  assert.strictEqual(R.protects(R.normalizeRules({ onePerSquare: true }), 8), false);
+  assert.strictEqual(R.protects(R.normalizeRules({}), 8), true);
+});
+
+test('onePerSquare games still finish (500 bot games), AI does not walk onto a start square for safety', () => {
+  const rnd = rng(777);
+  for (let g = 0; g < 500; g++) {
+    let s = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules: { onePerSquare: true } });
+    let steps = 0;
+    while (!s.over) { const r = 1 + Math.floor(rnd() * 6); s = R.apply(s, { r, t: AI.choose(s, r, s.seats[s.turn].level, rnd) }).state; if (++steps > 6000) throw new Error('no end'); }
+    for (let c = 0; c < 4; c++) { // never two tokens on one track square
+      const cells = [];
+      for (let c2 = 0; c2 < 4; c2++) for (const q of s.tokens[c2]) if (q >= 0 && q <= R.LAST_TRACK) cells.push(R.trackIndex(c2, q));
+      assert.strictEqual(new Set(cells).size, cells.length);
+    }
+  }
+});
+
+test('protocol: leave hands the seat to the host computer, also in later rounds; host leaving ends the game', () => {
+  const seats = [{ kind: 'human', user: 'alice' }, { kind: 'human', user: 'bob' }, null, null];
+  const e = [enc('alice', 'setup', { g: 'G', seats, first: 0, round: 1, rules: { threeTries: false } })];
+  e.push(enc('alice', 'move', { g: 'G', n: 0, c: 0, r: 2, t: -1 }));
+  e.push(enc('bob', 'say', { g: 'G', text: 'bye' }));
+  e.push(enc('bob', 'leave', { g: 'G', c: 1, after: 1 }));
+  e.push(enc('alice', 'move', { g: 'G', n: 1, c: 1, r: 2, t: -1 })); // the host plays bob's colour now
+  let rep = P.replay(e, 'alice');
+  assert.strictEqual(rep.state.n, 2);
+  assert.deepStrictEqual(rep.left, ['bob']);
+  assert.strictEqual(rep.hostLeft, false);
+  assert.ok(rep.timeline.some(x => x.kind === 'left' && x.author === 'bob' && !x.host));
+  // bob is not asked about a new round any more
+  e.push(enc('alice', 'restartAsk', { g: 'G' }));
+  rep = P.replay(e, 'alice');
+  assert.deepStrictEqual(rep.restart.needed, ['alice']); assert.ok(rep.restart.complete);
+  // a new round that still lists bob as human (sent before the host saw the leave): the host plays him from move 0
+  const e2 = e.concat([enc('alice', 'setup', { g: 'G2', seats, first: 1, round: 2, rules: { threeTries: false } }), enc('alice', 'move', { g: 'G2', n: 0, c: 1, r: 2, t: -1 })]);
+  rep = P.replay(e2, 'alice');
+  assert.strictEqual(rep.setup.g, 'G2'); assert.strictEqual(rep.state.n, 1);
+  // a leave in a later round does not touch an earlier one: order independence
+  const shuffled = [0, 1, 4, 5, 6, 7, 2, 3].map(i => e2[i]); // bob's messages merged last
+  assert.strictEqual(P.replay(shuffled, 'alice').state.n, 1);
+  // the host leaves: the game is marked as ended, no new-round question stays open
+  const e3 = e.concat([enc('alice', 'leave', { g: 'G', c: 0, after: 2 })]);
+  rep = P.replay(e3, 'alice');
+  assert.strictEqual(rep.hostLeft, true); assert.strictEqual(rep.restart, null);
+  assert.ok(rep.timeline.some(x => x.kind === 'left' && x.author === 'alice' && x.host));
+  // someone who is not a player leaving changes nothing in the game
+  rep = P.replay(e.slice(0, 2).concat([enc('eve', 'leave', { g: 'G', c: 1, after: 0 }), enc('alice', 'move', { g: 'G', n: 1, c: 1, r: 2, t: -1 })]), 'alice');
+  assert.strictEqual(rep.state.n, 1);
+});
+
+test('protocol: messages carry the lowest protocol that understands them', () => {
+  assert.strictEqual(P.msg('move', {}).v, 2); assert.strictEqual(P.msg('say', {}).v, 2);
+  assert.strictEqual(P.msg('setup', {}).v, 3); assert.strictEqual(P.msg('leave', {}).v, 3);
+  assert.ok(P.PROTOCOL >= 3);
 });
 
 console.log((process.exitCode ? 'FAILED' : 'OK') + ' – ' + passed + ' tests passed');

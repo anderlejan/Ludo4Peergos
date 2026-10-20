@@ -11,19 +11,34 @@
   function lsSet(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch (e) { /* private mode */ } }
   function lsDel(k) { try { localStorage.removeItem(LS + k); } catch (e) { /* ignore */ } }
 
+  // ONE queue for every Peergos API call of this app (data folder AND chat, see net.js): Peergos changes the user's
+  // encrypted tree for each of them, and overlapping calls can fail with "CAS exception updating cryptree node"
+  // (seen with Peergos 1.39 when chat reads/sends and data writes overlapped). The body is read inside the queued step.
+  let chain = Promise.resolve();
+  function api(path, init) {
+    const step = async () => {
+      const r = await fetch(path, init);
+      const text = await r.text();
+      return { ok: r.ok, status: r.status, text, location: r.headers.get('location') };
+    };
+    const run = chain.then(step, step);
+    chain = run.catch(() => {});
+    return run;
+  }
+
   async function getJSON(path) {
     if (!PEERGOS) return undefined;
-    const r = await fetch(DATA + path, { method: 'GET', cache: 'no-store' });
+    const r = await api(DATA + path, { method: 'GET', cache: 'no-store' });
     if (r.status === 404) return null;
     if (!r.ok) throw new Error('GET ' + path + ' → ' + r.status);
-    const text = await r.text();
+    const text = r.text;
     if (!text.trim()) return null;
     return JSON.parse(text);
   }
 
   async function putText(path, text) {
     if (!PEERGOS) return false;
-    const r = await fetch(DATA + path, { method: 'PUT', body: new TextEncoder().encode(text) });
+    const r = await api(DATA + path, { method: 'PUT', body: new TextEncoder().encode(text) });
     if (!(r.status === 200 || r.status === 201 || r.status === 204)) throw new Error('PUT ' + path + ' → ' + r.status);
     return true;
   }
@@ -66,7 +81,7 @@
     };
   }
 
-  const Storage = { PEERGOS, getJSON, putText, Doc, lsGet, lsSet, lsDel, username: url.searchParams.get('username') || '' };
+  const Storage = { PEERGOS, api, getJSON, putText, Doc, lsGet, lsSet, lsDel, username: url.searchParams.get('username') || '' };
   root.L4P = root.L4P || {};
   root.L4P.Storage = Storage;
 })(window);

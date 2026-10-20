@@ -57,7 +57,9 @@
     safeSquares: true,       // start squares and stars protect tokens
     threeTries: true,        // up to 3 rolls while no token is out of the yard
     endMode: 'first',        // 'first' = the first player home wins | 'all' = play on for all places
-    selfKick: false,         // one token per square: landing on your own token sends that token back to the yard
+    onePerSquare: false,     // one token per square for everybody: landing on ANY token (own or opponent) sends it to
+                             // its yard; safe squares do not protect then (so the same rule holds for all tokens)
+    selfKick: false,         // legacy (0.2.0): only own tokens are kicked; kept so old games replay the same way
   });
 
   function normalizeRules(r) {
@@ -122,6 +124,8 @@
 
   const trackIndex = (color, rel) => (START[color] + rel) % TRACK_LEN;
   const isSafeCell = idx => SAFE.indexOf(idx) >= 0;
+  /** True when a token on track cell `idx` cannot be captured under these rules. */
+  const protects = (rules, idx) => !!(rules && rules.safeSquares && !rules.onePerSquare && isSafeCell(idx));
 
   /** Grid position [col,row] of a token of `color` at relative position `rel` (token index for yard/centre spots). */
   function cellOf(color, rel, tokenIndex) {
@@ -167,7 +171,7 @@
   function capturesAt(state, color, rel) {
     if (rel < 0 || rel > LAST_TRACK) return [];
     const cell = trackIndex(color, rel);
-    if (state.rules.safeSquares && isSafeCell(cell)) return [];
+    if (protects(state.rules, cell)) return [];
     const hits = [];
     for (let oc = 0; oc < 4; oc++) {
       if (oc === color || !state.seats[oc]) continue;
@@ -219,7 +223,7 @@
           events.push({ type: 'capture', color: c, victim: oc, token: j, from: s.tokens[oc][j] });
           s.tokens[oc][j] = -1;
         }
-        if (s.rules.selfKick && move.to >= 0 && move.to < FINISH) {
+        if ((s.rules.selfKick || s.rules.onePerSquare) && move.to >= 0 && move.to < FINISH) {
           for (let j = 0; j < 4; j++) {
             if (j !== t && s.tokens[c][j] === move.to) {
               events.push({ type: 'selfCapture', color: c, token: j, from: move.to });
@@ -292,7 +296,7 @@
   const Rules = {
     COLORS, START, FINISH, LAST_TRACK, TRACK, TRACK_LEN, HOME_COL, YARD, YARD_SPOTS, CENTER_SPOTS, STARS, SAFE,
     DEFAULT_RULES, normalizeRules, normalizeSeat, newGame, clone, legalMoves, target, capturesAt, apply, cellOf,
-    trackIndex, isSafeCell, tokensOut, activeColors, nextColor, progress, replay, isThirdSix,
+    trackIndex, isSafeCell, protects, tokensOut, activeColors, nextColor, progress, replay, isThirdSix,
   };
   root.L4P = root.L4P || {};
   root.L4P.Rules = Rules;

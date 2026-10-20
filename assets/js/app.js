@@ -29,7 +29,7 @@
   ];
   const DEFAULTS = {
     theme: 'auto', lang: 'auto', sound: true, volume: 0.6, anim: 'normal', tokens: 'glossy',
-    autoMove: true, autoRoll: false, hints: true, confirmLeave: true, showNotes: true, showFullscreen: false,
+    autoMove: true, autoRoll: false, hints: true, confirmLeave: true, showNotes: true,
     level: 'normal', rules: Object.assign({}, R.DEFAULT_RULES), quickOpponents: 3,
     lastLocal: null, lastOnline: null, settingsSection: 'look', savedAt: 0,
   };
@@ -43,12 +43,19 @@
   const SPEEDS = ['slow', 'normal', 'fast', 'instant'];
   const speedId = v => (SPEEDS.indexOf(v) >= 0 ? v : 'normal');
 
+  /** Rules kept in Settings (defaults for new games). 0.2.0 had "selfKick" (own tokens only); since 0.3.0 the
+   *  option is "one token per square" for every token, so a saved selfKick becomes onePerSquare. */
+  function settingsRules(r) {
+    const n = R.normalizeRules(r);
+    if (n.selfKick) { n.selfKick = false; n.onePerSquare = true; }
+    return n;
+  }
   let settings = Object.assign({}, DEFAULTS, S.lsGet('settings', {}));
-  settings.rules = R.normalizeRules(settings.rules);
+  delete settings.showFullscreen;
+  settings.rules = settingsRules(settings.rules);
   let saveState = 'saved';
   const saveListeners = new Set();
   const settingsDoc = S.Doc('settings.json', 250, s => { saveState = s; saveListeners.forEach(f => f(s)); });
-  const FULLSCREEN_OK = !!(document.fullscreenEnabled && document.documentElement.requestFullscreen);
 
   function applySettings() {
     let theme = settings.theme;
@@ -59,8 +66,6 @@
     Sound.configure(settings.sound, settings.volume);
     const nb = document.getElementById('btn-notes');
     if (nb) nb.hidden = !settings.showNotes;
-    const fb = document.getElementById('btn-full');
-    if (fb) fb.hidden = !(settings.showFullscreen && FULLSCREEN_OK);
     const sb = document.getElementById('btn-sound');
     if (sb) { sb.replaceChildren(icon(settings.sound ? 'sound' : 'mute')); sb.title = t('menu.sound'); }
   }
@@ -82,7 +87,8 @@
       if (remote && typeof remote === 'object') {
         if ((remote.savedAt || 0) > (settings.savedAt || 0)) {
           settings = Object.assign({}, DEFAULTS, remote);
-          settings.rules = R.normalizeRules(settings.rules);
+          delete settings.showFullscreen;
+          settings.rules = settingsRules(settings.rules);
           S.lsSet('settings', settings);
           applySettings();
           refreshTexts();
@@ -129,8 +135,46 @@
     const wins = [0, 0, 0, 0];
     for (const r of rep.rounds) if (r.over && r.winner != null) wins[r.winner]++;
     onlineInfo[chatId] = { seats: rep.setup.seats, rules: rep.setup.rules, speed: rep.setup.speed || null, round: rep.rounds.length ? rep.rounds[rep.rounds.length - 1].round : 1,
-      over: rep.state.over, turn: rep.state.turn, wins, checked: Date.now() };
+      over: rep.state.over, turn: rep.state.turn, wins, checked: Date.now(),
+      left: (rep.left || []).indexOf(ME) >= 0, hostLeft: !!rep.hostLeft, leftUsers: rep.left || [] };
     S.lsSet('onlineInfo', onlineInfo);
+  }
+
+  // Online games this user created or opened (also from the News feed), kept in the app's data folder, so a game
+  // stays in the list even when Peergos' chat list leaves it out. {chatId: {title, added, opened, removed?}}
+  let knownOnline = S.lsGet('knownOnline', {});
+  const knownDoc = S.Doc('online-games.json', 400);
+  function saveKnown() { S.lsSet('knownOnline', knownOnline); knownDoc.set({ version: 1, games: knownOnline }); }
+  function knowGame(chatId, title) {
+    if (!chatId) return;
+    const k = knownOnline[chatId] || { added: Date.now() };
+    if (k.removed) return; // deleted on purpose: keep it out
+    const changed = !knownOnline[chatId] || (title && k.title !== title);
+    k.opened = Date.now();
+    if (title) k.title = title;
+    knownOnline[chatId] = k;
+    if (changed || !k.saved || Date.now() - k.saved > 3600000) { k.saved = Date.now(); saveKnown(); } else S.lsSet('knownOnline', knownOnline);
+  }
+  function forgetGame(chatId) {
+    knownOnline[chatId] = { removed: Date.now() };
+    saveKnown();
+  }
+  async function loadRemoteKnown() {
+    try {
+      const remote = await S.getJSON('online-games.json');
+      if (remote && remote.games && typeof remote.games === 'object') {
+        let changed = false, push = false;
+        for (const [id, g] of Object.entries(remote.games)) {
+          const mine = knownOnline[id];
+          if (!mine) { knownOnline[id] = g; changed = true; }
+          else if (g.removed && !mine.removed) { knownOnline[id] = g; changed = true; }
+          else if (!g.removed && !mine.removed && (g.opened || 0) > (mine.opened || 0)) { knownOnline[id] = Object.assign({}, mine, g); changed = true; }
+        }
+        for (const id of Object.keys(knownOnline)) if (!remote.games[id]) push = true;
+        if (changed) { S.lsSet('knownOnline', knownOnline); if (screen === 'home') fillGamesList(); }
+        if (push) saveKnown();
+      } else if (remote === null && Object.keys(knownOnline).length) saveKnown();
+    } catch (e) { console.warn('known games load', e); }
   }
 
   // ───────────────────────────── helpers ─────────────────────────────
@@ -156,8 +200,9 @@
   /** Short text of the rules that differ from the standard ones, and the full list for a tooltip. */
   function rulesShort(rules) {
     const r = R.normalizeRules(rules), d = R.DEFAULT_RULES, diff = [];
-    for (const k of Object.keys(d)) if (r[k] !== d[k]) diff.push(t('short.' + k));
-    const full = Object.keys(d).map(k => {
+    const keys = Object.keys(d).filter(k => k !== 'selfKick' || r.selfKick); // selfKick only shows in old (0.2.0) games
+    for (const k of keys) if (r[k] !== d[k] && !(k === 'safeSquares' && r.onePerSquare)) diff.push(t('short.' + k));
+    const full = keys.map(k => {
       if (k === 'enterOn') return t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
       if (k === 'endMode') return t('rule.endMode') + ': ' + t('rule.endMode.' + r.endMode);
       return (r[k] ? '✓ ' : '✗ ') + t('rule.' + k);
@@ -195,15 +240,8 @@
       h('button', { class: 'framed-btn', id: 'btn-notes', onclick: openNotes, title: t('menu.notes') + ' (Ctrl+Shift+N)' }, icon('note'), h('span', { 'data-t': 'menu.notes' }, t('menu.notes'))),
       h('button', { class: 'framed-btn', id: 'btn-settings', onclick: () => openSettings() }, icon('gear'), h('span', { 'data-t': 'menu.settings' }, t('menu.settings'))),
       h('button', { class: 'icon-btn', id: 'btn-sound', onclick: () => { set({ sound: !settings.sound }, { quiet: true }); if (settings.sound) Sound.play('click'); } }, icon(settings.sound ? 'sound' : 'mute')),
-      h('button', { class: 'icon-btn', id: 'btn-full', title: t('menu.fullscreen'), onclick: toggleFullscreen, hidden: true }, icon('full')),
       h('button', { class: 'icon-btn', id: 'btn-help', title: t('menu.help'), onclick: openHelp }, icon('help')));
     return h('header', { class: 'topbar' }, logo, h('div', { class: 'top-title', id: 'top-title' }), right);
-  }
-
-  function toggleFullscreen() {
-    const d = document;
-    if (d.fullscreenElement) d.exitFullscreen().catch(() => {});
-    else d.documentElement.requestFullscreen().catch(() => toast(t('set.fullscreenBlocked'), 'warn', 7000));
   }
 
   function refreshTexts() {
@@ -245,7 +283,9 @@
     m.replaceChildren(h('div', { class: 'home-inner' }, hero, actions, games));
     fillGamesList();
     if (Net.available && onlineState !== 'loading') loadOnlineList();
+    if (Net.available && !homeTimer) homeTimer = setInterval(() => { if (screen === 'home' && !document.hidden && !UI.topDialog()) loadOnlineList(); }, 30000);
   }
+  let homeTimer = null;
 
   function localInfo(g) {
     const wins = [0, 0, 0, 0];
@@ -269,23 +309,33 @@
           h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteLocal'), t('home.delete'), { danger: true })) { localGames = localGames.filter(x => x.id !== g.id); saveLocalGames(); fillGamesList(); } } }, icon('trash'))),
       });
     }
-    if (onlineList) {
-      for (const c of onlineList) {
-        const when = c.latest && c.latest.creationTime ? parseLocal(c.latest.creationTime) : 0;
-        const others = (c.members || []).filter(u => u !== ME);
+    if (Net.available) {
+      const merged = (onlineList || []).filter(c => !(knownOnline[c.chatId] && knownOnline[c.chatId].removed));
+      const listed = new Set(merged.map(c => c.chatId));
+      for (const [id, k] of Object.entries(knownOnline)) {
+        if (k.removed || listed.has(id)) continue;
+        merged.push({ chatId: id, title: k.title, members: [], latest: null, known: k });
+      }
+      for (const c of merged) {
         const info = onlineInfo[c.chatId];
+        const k = knownOnline[c.chatId];
+        const when = Math.max(c.latest && c.latest.creationTime ? parseLocal(c.latest.creationTime) : 0, k && k.opened || 0, k && k.added || 0);
+        let others = (c.members || []).filter(u => u !== ME);
+        if (!others.length && info && info.seats) others = info.seats.filter(s => s && s.kind === 'human' && s.user && s.user !== ME).map(s => s.user);
+        const state = info ? (info.left ? t('home.youLeft') : info.hostLeft ? t('home.hostLeft') : info.over ? t('home.finished') : t('home.inProgress')) : '';
         items.push({
-          when, el: h('div', { class: 'game-card online', tabindex: '0', onclick: () => openOnline(c.chatId), onkeydown: e => { if (e.key === 'Enter') openOnline(c.chatId); } },
+          when, el: h('div', { class: 'game-card online' + (info && (info.left || info.hostLeft) ? ' left' : ''), 'data-chat': c.chatId, tabindex: '0', onclick: () => openOnline(c.chatId, { title: c.title }), onkeydown: e => { if (e.key === 'Enter') openOnline(c.chatId, { title: c.title }); } },
             h('span', { class: 'gc-kind', title: t('home.online') }, icon('users')),
-            h('span', { class: 'gc-main' }, h('span', { class: 'gc-title' }, h('b', null, c.title || 'Ludo'), h('small', null, (info ? (info.over ? t('home.finished') : t('home.inProgress')) + ' · ' : '') + (others.join(', ') || '—') + (when ? ' · ' + UI.timeAgo(new Date(when)) : ''))),
+            h('span', { class: 'gc-main' }, h('span', { class: 'gc-title' }, h('b', null, c.title || 'Ludo'), h('small', null, (state ? state + ' · ' : '') + (others.join(', ') || '—') + (when ? ' · ' + UI.timeAgo(new Date(when)) : ''))),
               info ? summaryEl(info) : h('div', { class: 'sum muted small' }, t('sum.loading'))),
-            h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteOnline'), t('home.delete'), { danger: true })) { await Net.remove(c.chatId).catch(() => false); onlineList = onlineList.filter(x => x.chatId !== c.chatId); delete onlineInfo[c.chatId]; S.lsSet('onlineInfo', onlineInfo); fillGamesList(); } } }, icon('trash'))),
+            h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteOnline'), t('home.delete'), { danger: true })) { await Net.remove(c.chatId).catch(() => false); forgetGame(c.chatId); if (onlineList) onlineList = onlineList.filter(x => x.chatId !== c.chatId); delete onlineInfo[c.chatId]; S.lsSet('onlineInfo', onlineInfo); fillGamesList(); } } }, icon('trash'))),
         });
       }
     }
     items.sort((a, b) => b.when - a.when);
     const kids = items.map(i => i.el);
-    if (onlineState === 'loading') kids.push(h('div', { class: 'muted small pad' }, t('home.loadingOnline')));
+    if (onlineState === 'loading' && !onlineList) kids.push(h('div', { class: 'muted small pad' }, t('home.loadingOnline')));
+    if (onlineState === 'error') kids.push(h('div', { class: 'muted small pad warn-text' }, t('home.listError')));
     if (!kids.length) kids.push(h('div', { class: 'empty' }, t('home.noGames')));
     list.replaceChildren(...kids);
   }
@@ -295,19 +345,25 @@
     return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : 0;
   }
 
+  const summaryFailed = {};
   async function loadOnlineList() {
+    if (onlineState === 'loading') return;
     onlineState = 'loading';
     fillGamesList();
-    try { onlineList = await Net.listGames(); onlineState = 'ok'; }
-    catch (e) { console.warn('online list', e); onlineState = 'error'; }
+    try {
+      onlineList = await Net.listGames(); onlineState = 'ok';
+      for (const c of onlineList) { const k = knownOnline[c.chatId]; if (!k) knowGame(c.chatId, c.title); else if (!k.removed && c.title && !k.title) knowGame(c.chatId, c.title); }
+    } catch (e) { console.warn('online list', e); onlineState = 'error'; }
     if (screen === 'home') fillGamesList();
     // fill in the summaries of games this browser has not looked at yet (or not for 10 minutes)
-    if (onlineList) {
-      const todo = onlineList.filter(c => !onlineInfo[c.chatId] || Date.now() - (onlineInfo[c.chatId].checked || 0) > 600000).slice(0, 6);
+    {
+      const ids = new Set((onlineList || []).map(c => c.chatId));
+      for (const [id, k] of Object.entries(knownOnline)) if (!k.removed) ids.add(id);
+      const todo = Array.from(ids).filter(id => !(knownOnline[id] && knownOnline[id].removed)).map(id => ({ chatId: id })).filter(c => (!onlineInfo[c.chatId] || Date.now() - (onlineInfo[c.chatId].checked || 0) > 600000) && !(Date.now() - (summaryFailed[c.chatId] || 0) < 600000)).slice(0, 6);
       for (const c of todo) {
         if (screen !== 'home') break;
         try { const res = await Net.read(c.chatId, 0); rememberOnline(c.chatId, P.replay(res.entries.filter(e => e.type === 'Application'), P.chatOwner(c.chatId))); }
-        catch (e) { console.warn('summary', e); }
+        catch (e) { console.warn('summary', e); summaryFailed[c.chatId] = Date.now(); }
         if (screen === 'home') fillGamesList();
       }
     }
@@ -329,14 +385,14 @@
     const seats = [null, null, null, null];
     seats[meC] = { kind: 'human', user: ME || 'me' };
     for (let k = 0; k < n; k++) seats[order[k]] = { kind: 'bot', level: settings.level };
-    startLocal({ seats, rules: R.normalizeRules(settings.rules), first: meC, speed: speedId(settings.anim) }, t('home.quickN', { n }));
+    startLocal({ seats, rules: settingsRules(settings.rules), first: meC, speed: speedId(settings.anim) }, t('home.quickN', { n }));
   }
 
   function openNewGame(mode) {
     if (mode === 'online' && !Net.available) { toast(t('home.onlineUnavailable'), 'warn'); return; }
     const last = mode === 'online' ? settings.lastOnline : settings.lastLocal;
     const seats = (last && Array.isArray(last.seats) && last.seats.length === 4 ? last.seats : defaultSeats(mode)).map(s => Object.assign({}, s));
-    const rules = R.normalizeRules(last && last.rules ? last.rules : settings.rules);
+    const rules = settingsRules(last && last.rules ? last.rules : settings.rules);
     let first = last && last.first != null ? last.first : 'random';
     let speed = speedId(last && last.speed ? last.speed : settings.anim);
     const kinds = mode === 'online' ? ['me', 'friend', 'bot', 'empty'] : ['me', 'bot', 'local', 'empty'];
@@ -422,19 +478,29 @@
   }
 
   function rulesEditor(rules, onChange, readOnly) {
-    const row = (key, control) => h('div', { class: 'rule-row' }, h('span', null, t('rule.' + key)), control);
-    const toggle = key => h('label', { class: 'switch' + (readOnly ? ' ro' : '') }, h('input', { type: 'checkbox', disabled: readOnly ? true : null, checked: rules[key] ? true : null, onchange: e => { rules[key] = e.target.checked; onChange(); } }), h('span', { class: 'slider' }));
+    let box = null;
+    const row = (key, control, note) => h('div', { class: 'rule-row', 'data-rule': key }, h('span', null, t('rule.' + key), note ? h('small', { class: 'rule-note' }, note) : null), control);
+    const toggle = (key, locked) => h('label', { class: 'switch' + (readOnly || locked ? ' ro' : '') }, h('input', { type: 'checkbox', id: 'rule-' + key, disabled: readOnly || locked ? true : null, checked: rules[key] ? true : null,
+      onchange: e => { rules[key] = e.target.checked; onChange(); if (key === 'onePerSquare') draw(); } }), h('span', { class: 'slider' }));
     const choice = (key, vals) => {
       const seg = h('div', { class: 'seg small' + (readOnly ? ' ro' : '') }, vals.map(v => h('button', { class: 'seg-btn' + (rules[key] === v ? ' on' : ''), disabled: readOnly ? true : null, onclick: e => { rules[key] = v; [...seg.children].forEach(b => b.classList.remove('on')); e.currentTarget.classList.add('on'); onChange(); } }, t('rule.' + key + '.' + v))));
       return seg;
     };
-    return h('div', { class: 'rules' + (readOnly ? ' read-only' : '') },
-      row('enterOn', choice('enterOn', ['six', 'oneOrSix'])),
-      row('sixBonus', toggle('sixBonus')), row('threeSixes', toggle('threeSixes')),
-      row('captureBonus', toggle('captureBonus')), row('finishBonus', toggle('finishBonus')),
-      row('safeSquares', toggle('safeSquares')), row('threeTries', toggle('threeTries')),
-      row('selfKick', toggle('selfKick')),
-      row('endMode', choice('endMode', ['first', 'all'])));
+    function draw() {
+      const one = !!rules.onePerSquare;
+      box.replaceChildren(
+        row('enterOn', choice('enterOn', ['six', 'oneOrSix'])),
+        row('threeTries', toggle('threeTries')),
+        row('sixBonus', toggle('sixBonus')), row('threeSixes', toggle('threeSixes')),
+        row('captureBonus', toggle('captureBonus')), row('finishBonus', toggle('finishBonus')),
+        row('onePerSquare', toggle('onePerSquare')),
+        row('safeSquares', toggle('safeSquares', one), one ? t('rule.safeOff') : null),
+        rules.selfKick ? row('selfKick', toggle('selfKick', true)) : null,
+        row('endMode', choice('endMode', ['first', 'all'])));
+    }
+    box = h('div', { class: 'rules' + (readOnly ? ' read-only' : '') });
+    draw();
+    return box;
   }
 
   async function createOnline(seats, rules, first, speed) {
@@ -459,7 +525,7 @@
     const setup = P.msg('setup', { g: P.randomId(8), seats: out, rules, first: first == null ? randomFirst(out) : first, speed: speedId(speed), round: 1 }, VERSION);
     await Net.send(chatId, P.encode(setup));
     onlineList = null;
-    await openOnline(chatId, { initial: [{ author: ME, text: P.encode(setup), type: 'Application' }] });
+    await openOnline(chatId, { title, initial: [{ author: ME, text: P.encode(setup), type: 'Application' }] });
   }
 
   // ───────────────────────────── settings ─────────────────────────────
@@ -503,8 +569,7 @@
         field(t('set.tokens'), seg('tokens', ['glossy', 'flat'], v => t('set.tokens.' + v))),
         h('div', { class: 'field', id: 'field-speed' }, h('div', { class: 'field-label' }, t('set.anim')), seg('anim', SPEEDS, v => t('set.anim.' + v), inGame), inGame ? lockNote() : null),
         field(t('set.lang'), seg('lang', ['auto'].concat(Object.keys(I18n.LANGS)), v => v === 'auto' ? t('set.lang.auto') : I18n.LANGS[v].name)),
-        toggle('showNotes', t('set.showNotes')),
-        toggle('showFullscreen', t('set.showFullscreen'), !FULLSCREEN_OK, FULLSCREEN_OK ? null : t('set.fullscreenBlocked'))];
+        toggle('showNotes', t('set.showNotes'))];
     }
     if (sec === 'play') {
       return [toggle('autoMove', t('set.autoMove')), toggle('autoRoll', t('set.autoRoll')), toggle('hints', t('set.hints')), toggle('confirmLeave', t('set.confirmLeave')),
@@ -512,14 +577,14 @@
     }
     if (sec === 'sound') {
       const vol = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(settings.volume * 100)), class: 'range', oninput: e => set({ volume: e.target.value / 100 }, { quiet: true }), onchange: () => Sound.play('capture') });
-      return [toggle('sound', t('set.sound')), field(t('set.volume'), h('div', { class: 'vol-row' }, vol, h('button', { class: 'btn small', onclick: () => Sound.play('win') }, icon('play'), t('set.test'))))];
+      return [toggle('sound', t('set.sound')), field(t('set.volume'), h('div', { class: 'vol-row' }, vol, h('button', { class: 'btn small', onclick: () => Sound.play('win') }, icon('play'), t('set.test')), h('button', { class: 'btn small', id: 'btn-test-chat', onclick: () => Sound.play('chat') }, icon('chat'), t('set.testChat'))))];
     }
     if (sec === 'rules') {
       if (inGame && game.currentRules) {
         return [h('h4', { class: 'sub-head' }, t('set.gameRules')), rulesEditor(Object.assign({}, game.currentRules()), () => {}, true), lockNote()];
       }
       const rules = Object.assign({}, settings.rules);
-      return [h('p', { class: 'hint' }, t('set.rulesHint')), rulesEditor(rules, () => set({ rules: R.normalizeRules(rules) }, { quiet: true }))];
+      return [h('p', { class: 'hint' }, t('set.rulesHint')), rulesEditor(rules, () => set({ rules: settingsRules(rules) }, { quiet: true }))];
     }
     return [h('div', { class: 'about' },
       h('div', { class: 'about-logo' }, h('span', { class: 'brand-name big' }, 'Ludo', h('b', null, '4'), 'Peergos'), h('div', { class: 'muted' }, t('set.version', { v: VERSION }))),
@@ -543,8 +608,11 @@
     li.push(t(r.sixBonus ? 'help.sixBonus.on' : 'help.sixBonus.off'));
     if (r.sixBonus) li.push(t(r.threeSixes ? 'help.threeSixes.on' : 'help.threeSixes.off'));
     li.push(t('help.capture') + t(r.captureBonus ? 'help.capture.bonus' : 'help.capture.noBonus'));
-    li.push(t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
-    li.push(t(r.selfKick ? 'help.selfKick.on' : 'help.selfKick.off'));
+    if (r.onePerSquare) li.push(t('help.onePer.on'));
+    else {
+      li.push(t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
+      li.push(t(r.selfKick ? 'help.selfKick.on' : 'help.onePer.off'));
+    }
     li.push(t(r.finishBonus ? 'help.finishBonus.on' : 'help.finishBonus.off') + ' ' + t('help.exact'));
     li.push(t(r.threeTries ? 'help.threeTries.on' : 'help.threeTries.off', { enter }));
     li.push(t(r.endMode === 'all' ? 'help.end.all' : 'help.end.first'));
@@ -632,7 +700,10 @@
 
   async function openOnline(chatId, opts) {
     const host = P.chatOwner(chatId);
-    startSession({ mode: 'online', chatId, host, entries: (opts && opts.initial) || [], next: 0, setup: null, state: null });
+    const k = knownOnline[chatId];
+    if (k && k.removed) delete knownOnline[chatId]; // opened again on purpose (e.g. from the News feed)
+    knowGame(chatId, (opts && opts.title) || (k && k.title) || '');
+    startSession({ mode: 'online', chatId, host, title: (opts && opts.title) || (k && k.title) || '', entries: (opts && opts.initial) || [], next: 0, setup: null, state: null });
   }
 
   function leaveToHome() {
@@ -713,6 +784,8 @@
       return seatName(seat, c);
     }
     function currentSetup() { return online ? (self.replay && self.replay.setup) : sess.rec.setup; }
+    function iLeft() { return !!(online && self.replay && self.replay.left && self.replay.left.indexOf(ME) >= 0); }
+    function hostGone() { return !!(online && self.replay && self.replay.hostLeft); }
     function roundNo() { return online ? (self.replay && self.replay.rounds.length ? self.replay.rounds[self.replay.rounds.length - 1].round : 1) : (sess.rec.round || 1); }
     function winsTally() {
       const wins = [0, 0, 0, 0];
@@ -737,7 +810,7 @@
         }
         if (seat.kind === 'bot') badges.push(h('span', { class: 'badge' }, icon('cpu')));
         const pct = Math.round(R.progress(st, c) * 100);
-        const active = st.turn === c && !st.over;
+        const active = st.turn === c && !st.over && !hostGone();
         return h('div', { class: 'player' + (active ? ' active' : '') + (place >= 0 ? ' done' : ''), style: { '--c': 'var(--p' + c + ')' } },
           h('span', { class: 'pl-token' }),
           h('span', { class: 'pl-main' }, h('span', { class: 'pl-name' }, nameOf(c), ...badges), h('span', { class: 'pl-bar' }, h('i', { style: { width: pct + '%' } }))),
@@ -758,8 +831,9 @@
       const st = self.state;
       if (online && st && self.replay && self.replay.setup) {
         const mine = st.seats.findIndex(s => s && s.kind === 'human' && s.user === ME);
-        if (mine >= 0 && !st.over && self.replay.resignedAt[mine] == null) btns.push(h('button', { class: 'btn small ghost', onclick: resign }, icon('flag'), t('game.resign')));
-        if (mine >= 0) btns.push(h('button', { class: 'btn small', id: 'btn-new-round', onclick: () => askRound(true) }, icon('play'), t('game.askRound')));
+        const ended = iLeft() || self.replay.hostLeft;
+        if (mine >= 0 && !ended) btns.push(h('button', { class: 'btn small', id: 'btn-new-round', onclick: () => askRound(true) }, icon('play'), t('game.askRound')));
+        if (mine >= 0 && !ended) btns.push(h('button', { class: 'btn small ghost danger-text', id: 'btn-leave', onclick: leaveGame }, icon('exit'), t('game.leaveGame')));
       } else if (!online && st) {
         btns.push(h('button', { class: 'btn small', id: 'btn-new-round', onclick: () => newRoundLocal(true) }, icon('play'), t('game.newRound')));
       }
@@ -778,6 +852,7 @@
       const tl = (self.replay && self.replay.timeline) || [];
       chatList.replaceChildren(...tl.slice(-150).map(s => {
         if (s.kind === 'round') return h('div', { class: 'chat-round' }, h('span', null, t('game.roundN', { n: s.round })));
+        if (s.kind === 'left') return h('div', { class: 'chat-sys' }, icon('exit'), h('span', null, t(s.host ? 'game.hostLeftLine' : 'game.leftLine', { name: s.author === ME ? t('common.you') : s.author })));
         const c = self.state ? self.state.seats.findIndex(x => x && x.user === s.author) : -1;
         return h('div', { class: 'say' + (s.author === ME ? ' me' : ''), style: c >= 0 ? { '--c': 'var(--p' + c + ')' } : null }, h('b', null, s.author === ME ? t('common.you') : s.author), h('span', null, s.text));
       }));
@@ -826,6 +901,8 @@
       board.setActive(st.over ? -1 : c);
       diceArea.style.setProperty('--c', 'var(--p' + c + ')');
       if (st.over) { status.textContent = st.winner == null ? t('game.over') : isMine(st.seats[st.winner]) ? t('game.youWin') : t('game.wins', { name: nameOf(st.winner) }); return; }
+      if (hostGone()) { status.textContent = t('game.hostLeftStatus', { name: self.sess.host === ME ? t('common.you') : self.sess.host }); hint.textContent = t('game.endedHint'); board.setActive(-1); return; }
+      if (iLeft()) hint.textContent = t('game.youLeftHint');
       const ctl = controlOf(st, c);
       if (self.phase === 'roll') {
         status.textContent = st.seats[c].kind === 'local' ? t('game.turnOf', { name: nameOf(c) }) : t('game.yourTurn');
@@ -843,7 +920,7 @@
       } else if (self.phase === 'bot' || self.phase === 'banner') {
         status.textContent = t('game.rolling', { name: nameOf(c) });
       } else {
-        status.textContent = t('game.turnOf', { name: nameOf(c) });
+        status.textContent = ctl === 'me' && isMine(st.seats[c]) ? t('game.yourTurn') : t('game.turnOf', { name: nameOf(c) });
       }
     }
 
@@ -946,6 +1023,7 @@
         if (!self.winnerShown) { self.winnerShown = true; setTimeout(() => showWinner(true), 600); }
         return;
       }
+      if (hostGone()) { self.phase = 'ended'; board.setMovable(-1, []); updateStatus(); drawActions(); return; }
       const ctl = controlOf(st, st.turn);
       // announce the turn: who plays now (and "roll again" when the same colour goes on)
       const changed = self.prevTurn !== st.turn;
@@ -987,7 +1065,7 @@
     }
 
     async function userRoll() {
-      if (self.phase !== 'roll' || self.busy) return;
+      if (self.phase !== 'roll' || self.busy || hostGone()) return;
       Sound.unlock();
       const st = self.state;
       const r = rollDie();
@@ -1068,12 +1146,14 @@
     /** The host's app starts the new round once everyone agreed (same players, rules and speed; same chat). */
     function maybeStartRound() {
       const rep = self.replay;
-      if (!rep || !rep.restart || !rep.restart.complete || sess.host !== ME) return;
+      if (!rep || !rep.restart || !rep.restart.complete || sess.host !== ME || rep.hostLeft) return;
       const id = rep.restart.id;
       if (self.sentRoundFor.has(id) || rep.setups.some(s => s.ask === id)) return;
       self.sentRoundFor.add(id);
       const s = rep.setup;
-      pushOwn(P.msg('setup', { g: P.randomId(8), seats: s.seats, rules: s.rules, speed: s.speed || self.speedId, first: randomFirst(s.seats), round: roundNo() + 1, ask: id }, VERSION));
+      // players who left the game are replaced by computer players (the host's app runs them)
+      const seats = s.seats.map(seat => seat && seat.kind === 'human' && (rep.left || []).indexOf(seat.user) >= 0 ? { kind: 'bot', level: settings.level } : seat);
+      pushOwn(P.msg('setup', { g: P.randomId(8), seats, rules: s.rules, speed: s.speed || self.speedId, first: randomFirst(s.seats), round: roundNo() + 1, ask: id }, VERSION));
       self.replay = null;
       integrate();
     }
@@ -1114,6 +1194,7 @@
       }
       if (rep.unknown && !self.unknown) { self.unknown = rep.unknown; toast(t('game.newProtocol'), 'warn', 8000); }
       rememberOnline(sess.chatId, rep);
+      noticeNews(rep);
       const newGame = !self.replay || !self.replay.setup || self.replay.setup.g !== rep.setup.g;
       const prevShown = self.shownN;
       if (newGame) {
@@ -1141,7 +1222,13 @@
       self.replay = rep;
       if (self.busy) { drawChat(); drawRestart(); drawActions(); return; } // the running animation picks it up in afterChange
       const pending = rep.history.filter(x => x.n >= prevShown);
-      if (!pending.length) { self.state = rep.state; drawChat(); drawPlayers(); drawRestart(); drawActions(); maybeStartRound(); return; }
+      if (!pending.length) {
+        self.state = rep.state; drawChat(); drawPlayers(); drawRestart(); drawActions(); maybeStartRound();
+        if (hostGone() && self.phase !== 'ended') { self.seq++; clearTimeout(nextTimer); next(); }
+        // a player left while it was their turn: this app (the host's) may have to play that colour now
+        else if (self.phase === 'wait' && self.state && !self.state.over && controlOf(self.state, self.state.turn) !== 'remote') { self.seq++; clearTimeout(nextTimer); next(); }
+        return;
+      }
       if (pending.length > 6) { // too many to animate: jump
         self.state = rep.state; self.shownN = rep.state.n;
         for (const item of pending) eventsToLog(item.action, item.events, item.c);
@@ -1178,6 +1265,24 @@
       afterChange();
     }
 
+    /** Sound and toasts for what other players did outside the board: chat lines, leaving the game. */
+    function noticeNews(rep) {
+      const says = (rep.timeline || []).filter(x => x.kind === 'say' && x.author !== ME).length;
+      const left = (rep.left || []).filter(u => u !== ME);
+      if (!self.newsInit) { self.newsInit = true; self.saysSeen = says; self.leftSeen = new Set(left); return; }
+      if (says > self.saysSeen) {
+        Sound.play('chat');
+        if (chatList) { const box = chatList.closest('.chat'); box.classList.remove('ping'); void box.offsetWidth; box.classList.add('ping'); }
+      }
+      self.saysSeen = says;
+      for (const u of left) {
+        if (self.leftSeen.has(u)) continue;
+        self.leftSeen.add(u);
+        Sound.play('leave');
+        toast(t(u === sess.host ? 'game.hostLeftToast' : 'game.leftToast', { name: u }), 'warn', 7000);
+      }
+    }
+
     function sendSay() {
       const text = chatIn.value.trim();
       if (!text || !online || !self.replay || !self.replay.setup) return;
@@ -1186,13 +1291,25 @@
       drawChat();
     }
 
-    async function resign() {
-      if (!(await confirm(t('game.resignConfirm'), t('game.resign')))) return;
+    /** Leaves the game for good: the others are told (chat line + toast), the computer plays my colour from now on.
+     *  When the host leaves, the game ends for everybody (only the host's app runs the computer players). */
+    async function leaveGame() {
+      if (!self.replay || !self.replay.setup || iLeft()) return;
+      const host = sess.host === ME;
+      if (!(await confirm(t(host ? 'game.leaveConfirmHost' : 'game.leaveConfirm'), t('game.leaveGame'), { danger: true }))) return;
       const mine = self.state.seats.findIndex(s => s && s.kind === 'human' && s.user === ME);
-      pushOwn(P.msg('resign', { g: self.replay.setup.g, c: mine, after: self.state.n }, VERSION));
+      pushOwn(P.msg('leave', { g: self.replay.setup.g, c: mine, after: self.state.n }, VERSION));
+      clearTimeout(nextTimer);
       board.setMovable(-1, []);
       self.phase = 'wait';
-      afterChange();
+      if (self.winnerDlg) self.winnerDlg.close();
+      drawActions(); drawChat(); updateStatus();
+      // make sure the message is out before going back (the outbox keeps trying in the background anyway)
+      const t0 = Date.now();
+      toast(t('game.leaving'), 'info', 2500);
+      while (self.outbox.size && Date.now() - t0 < 10000) await sleep(150);
+      toast(self.outbox.size ? t('game.leftPending') : t('game.leftDone'), self.outbox.size ? 'warn' : 'ok', 4000);
+      if (game === self) { stop(); game = null; renderHome(); }
     }
 
     // ── winner
@@ -1204,7 +1321,7 @@
       Sound.play('win');
       const order = st.finished.concat([0, 1, 2, 3].filter(c => st.seats[c] && st.finished.indexOf(c) < 0).sort((a, b) => R.progress(st, b) - R.progress(st, a)));
       const iWon = isMine(st.seats[st.winner]);
-      const isPlayer = online ? st.seats.some(s => s && s.kind === 'human' && s.user === ME) : true;
+      const isPlayer = online ? st.seats.some(s => s && s.kind === 'human' && s.user === ME) && !iLeft() && !hostGone() : true;
       if (self.winnerDlg) self.winnerDlg.close();
       const d = self.winnerDlg = dialog({
         title: t('game.over'), icon: 'trophy', cls: 'dlg-winner', onClose: () => { if (self.winnerDlg === d) self.winnerDlg = null; },
@@ -1240,7 +1357,7 @@
         try {
           const list = onlineList || await Net.listGames().catch(() => []);
           const c = (list || []).find(x => x.chatId === sess.chatId);
-          if (c) { sess.title = c.title; document.getElementById('top-title').textContent = c.title; (c.members || []).forEach(u => self.invited.add(u)); }
+          if (c) { sess.title = c.title; if (screen === 'game' && game === self) document.getElementById('top-title').textContent = c.title; (c.members || []).forEach(u => self.invited.add(u)); if (c.title) knowGame(sess.chatId, c.title); }
         } catch (e) { /* title is optional */ }
       })();
       (async () => {
@@ -1331,10 +1448,11 @@
     const chatId = url.searchParams.get('chatId');
     if (chatId && Net.available) openOnline(chatId);
     else renderHome();
-    if (S.PEERGOS) { loadRemoteSettings(); loadRemoteGames(); }
-    root.addEventListener('beforeunload', () => { settingsDoc.flushNow(); gamesDoc.flushNow(); });
+    if (S.PEERGOS) { loadRemoteSettings(); loadRemoteGames(); loadRemoteKnown(); }
+    root.addEventListener('beforeunload', () => { settingsDoc.flushNow(); gamesDoc.flushNow(); knownDoc.flushNow(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && screen === 'home' && Net.available) loadOnlineList(); });
   }
 
-  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame, FULLSCREEN_OK };
+  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })(window);

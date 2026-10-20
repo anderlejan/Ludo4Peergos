@@ -12,7 +12,8 @@ It serves assets/ and implements the parts of /peergos-api the app uses:
   /peergos-api/v1/chat/         GET list with members
   /peergos-api/v1/chat/<id>     GET ?startIndex=
   /peergos-api/v0/print/        POST (accepted, ignored)
-Test hooks: GET /mock/state (JSON dump), POST /mock/invite-order {"order": ["bob", ...]}.
+Test hooks: GET /mock/state (JSON dump), POST /mock/invite-order {"order": ["bob", ...]},
+POST /mock/join {"chat", "user"}, POST /mock/hide-list {"user", "v0": bool, "v1": bool} (leave chats out of a list).
 """
 import json, sys, threading, time, uuid, os, io
 from email.parser import BytesParser
@@ -26,6 +27,7 @@ DATA = {}      # user -> {path: bytes}
 CHATS = {}     # id -> {owner, title, members:[...], joined:set, messages:[...]}
 USERS = []
 INVITE_ORDER = []
+HIDE = {}      # user -> {'v0': bool, 'v1': bool}: pretend Peergos leaves the chats out of that list
 LATENCY = float(os.environ.get('MOCK_LATENCY', '0.05'))
 MIME = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.woff2': 'font/woff2', '.json': 'application/json', '.txt': 'text/plain', '.md': 'text/markdown', '.svg': 'image/svg+xml'}
 
@@ -94,13 +96,13 @@ def make_handler(user):
                 return self.send(404)
             if p in ('/peergos-api/v1/chat/', '/peergos-api/v1/chat'):
                 with LOCK:
-                    mine = [(k, c) for k, c in CHATS.items() if user in c['joined']]
+                    mine = [(k, c) for k, c in CHATS.items() if user in c['joined'] and not HIDE.get(user, {}).get('v1')]
                     chats = [{'chatId': k, 'title': c['title'], 'members': c['members'], 'admins': [c['owner']]} for k, c in mine]
                     latest = [{'message': '', 'creationTime': c['messages'][-1]['timestamp'] if c['messages'] else now()} for k, c in mine]
                 return self.send(200, json.dumps({'chats': chats, 'latestMessages': latest}).encode())
             if p in ('/peergos-api/v0/chat/', '/peergos-api/v0/chat'):
                 with LOCK:
-                    out = [{'chatId': k, 'title': c['title']} for k, c in CHATS.items() if user in c['joined']]
+                    out = [{'chatId': k, 'title': c['title']} for k, c in CHATS.items() if user in c['joined'] and not HIDE.get(user, {}).get('v0')]
                 return self.send(200, json.dumps(out).encode())
             if p.startswith('/peergos-api/v1/chat/'):
                 cid = p[len('/peergos-api/v1/chat/'):]
@@ -151,6 +153,10 @@ def make_handler(user):
             time.sleep(LATENCY)
             if p == '/mock/invite-order':
                 INVITE_ORDER[:] = json.loads(raw or b'{}').get('order', [])
+                return self.send(200)
+            if p == '/mock/hide-list':
+                req = json.loads(raw or b'{}')
+                HIDE[req['user']] = {'v0': bool(req.get('v0')), 'v1': bool(req.get('v1'))}
                 return self.send(200)
             if p == '/mock/join':
                 req = json.loads(raw or b'{}')

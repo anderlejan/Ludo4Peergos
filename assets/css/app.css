@@ -517,3 +517,16 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .hero-title span, .hero-tok, .player.active .pl-token, .die.ready, .winner-token { animation: none !important; }
 }
+
+/* 0.3.0: leaving a game, chat ping, rule notes */
+.btn.danger-text { color: var(--bad); }
+.btn.danger-text:hover { border-color: var(--bad); }
+.chat-sys { align-self: center; display: flex; align-items: center; gap: 6px; max-width: 92%; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--bad) 14%, var(--bg3)); color: var(--fg2); font-size: .8em; text-align: center; }
+.chat-sys svg { width: 14px; height: 14px; flex: none; }
+.chat.ping { animation: chat-ping 1.1s ease-out; }
+@keyframes chat-ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); border-color: var(--acc); } 100% { box-shadow: 0 0 0 14px transparent; } }
+.game-card.left { opacity: .72; }
+.game-card.left:hover { opacity: 1; }
+.warn-text { color: var(--warn, var(--acc)); }
+.rule-row .rule-note { display: block; font-size: .78em; color: var(--fg3); margin-top: 2px; }
+.rule-row[data-rule="onePerSquare"] > span:first-child, .rule-row[data-rule="threeTries"] > span:first-child { max-width: 75%; }

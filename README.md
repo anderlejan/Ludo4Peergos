@@ -38,18 +38,23 @@ stay (Peergos keeps the app's data folder on updates).
    **Choose friends & start**.
 2. Peergos opens its own dialog listing your friends – pick who to invite and press **Apply**.
 3. Your friends find the invitation in their Peergos **News feed** ("… invited you to the App Ludo4Peergos") and press
-   **Join**. The game opens in their Ludo4Peergos (they need the app installed – share the ZIP with them).
+   **Join** (once). The game opens in their Ludo4Peergos (they need the app installed – share the ZIP with them) and
+   from then on it is always in their list of games in the app's menu.
 4. Everyone plays on their own device; moves appear for the others within a few seconds.
 
 Good to know:
 - Only Peergos friends can be invited.
 - Computer players in an online game are played by the host's app – keep it open while they are on turn.
-- A player who has to leave can **Hand over to the computer**; the host's app then plays their colour.
+- **Leave game** ends your part for good: the other players get a message in the game chat (and a sound), and the
+  host's app plays your colour from then on, also in new rounds. If the host leaves, the game ends for everybody,
+  because only the host's app runs the computer players.
+- A new chat line from another player plays its own short sound.
 - **New round**: any player can ask for one (during or after a game). When everyone still playing agrees, the
   host's app starts it in the same chat – the chat history stays.
 - Each player rolls on their own device – the game trusts its players, which is fine among friends.
 
-Full screen: Peergos does not give apps the full-screen permission, so use your browser's own full screen (F11).
+Full screen: Peergos does not give apps the full-screen permission (apps cannot switch to full screen), so use your
+browser's own full screen (F11).
 
 ## Privacy and security
 

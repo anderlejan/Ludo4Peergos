@@ -5,7 +5,8 @@
   const R = (root.L4P && root.L4P.Rules) || (typeof require !== 'undefined' ? require('./rules.js') : null);
 
   const PREFIX = 'L4P1 ';
-  const PROTOCOL = 2; // 2 (app 0.2.0): speed, round, restartAsk/restartVote, rule selfKick
+  const PROTOCOL = 3; // 2 (app 0.2.0): speed, round, restartAsk/restartVote, rule selfKick
+                     // 3 (app 0.3.0): leave, rule onePerSquare
 
   function b64urlEncode(str) {
     const bytes = new TextEncoder().encode(str);
@@ -48,22 +49,37 @@
     return b < 0 ? null : s.substring(a + 1, b);
   }
 
+  // Each message carries the lowest protocol that understands it, so a 0.3.0 player can still play in a game an older
+  // app started (moves, chat, new-round votes are protocol 2). New games (setup) and `leave` need protocol 3.
+  const NEEDS = { setup: 3, leave: 3 };
   function msg(kind, fields, appVersion) {
-    return Object.assign({ v: PROTOCOL, a: appVersion || '', k: kind, id: randomId(10) }, fields);
+    return Object.assign({ v: NEEDS[kind] || 2, a: appVersion || '', k: kind, id: randomId(10) }, fields);
   }
 
-  /** Plays the moves of one game (setup) found in msgs. */
-  function playGame(setup, msgs, host) {
+  /**
+   * Plays the moves of one game (setup) found in msgs.
+   * order: Map game id → index of its setup (a `leave` sent in an earlier round hands the seat over from move 0).
+   */
+  function playGame(setup, msgs, host, order) {
     const state0 = R.newGame(setup);
     let state = state0;
     const history = [];
     const resignedAt = [null, null, null, null];
+    const handOver = (c, after) => { if (resignedAt[c] == null || after < resignedAt[c]) resignedAt[c] = after; };
+    const myIndex = order && order.has(setup.g) ? order.get(setup.g) : -1;
     for (const m of msgs) {
-      if (m.k !== 'resign' || m.g !== setup.g) continue;
-      const c = m.c, seat = state0.seats[c];
-      if (!Number.isInteger(c) || !seat || seat.kind !== 'human' || seat.user !== m.author) continue;
-      const after = Number.isInteger(m.after) ? m.after : 0;
-      if (resignedAt[c] == null || after < resignedAt[c]) resignedAt[c] = after;
+      if (m.k === 'resign' && m.g === setup.g) {
+        const c = m.c, seat = state0.seats[c];
+        if (!Number.isInteger(c) || !seat || seat.kind !== 'human' || seat.user !== m.author) continue;
+        handOver(c, Number.isInteger(m.after) ? m.after : 0);
+      } else if (m.k === 'leave' && m.author !== host) {
+        // the player left the whole game (all rounds): the host's computer plays the seat
+        let after;
+        if (m.g === setup.g) after = Number.isInteger(m.after) ? m.after : 0;
+        else if (order && order.has(m.g) && order.get(m.g) < myIndex) after = 0;
+        else continue;
+        state0.seats.forEach((seat, c) => { if (seat && seat.kind === 'human' && seat.user === m.author) handOver(c, after); });
+      }
     }
     const controller = (c, n) => {
       const seat = state0.seats[c];
@@ -101,7 +117,7 @@
 
   /**
    * Replays a chat log. entries: [{author, text}] in this member's log order.
-   * Returns {setup, state, history, says, unknown, seen, rounds, restart, resignedAt, controller}.
+   * Returns {setup, state, history, says, unknown, seen, rounds, restart, resignedAt, controller, left, hostLeft, timeline}.
    * history: [{action, events, author, n, c}] of the current game (= the host's last setup).
    * rounds: [{g, round, over, winner, finished}] of every game in this chat, oldest first.
    * restart: the open "new round?" question of the current game, or null:
@@ -126,10 +142,16 @@
     const setups = msgs.filter(m => m.k === 'setup' && m.author === host && typeof m.g === 'string');
     const out = { setup: null, state: null, history: [], says, unknown, seen, error: null, rounds: [], restart: null, setups };
     const played = new Map();
+    const order = new Map();
+    setups.forEach((st, k) => { if (!order.has(st.g)) order.set(st.g, k); });
     for (const st of setups) {
       if (played.has(st.g)) continue;
-      try { played.set(st.g, playGame(st, msgs, host)); } catch (e) { out.error = 'Bad setup: ' + e.message; }
+      try { played.set(st.g, playGame(st, msgs, host, order)); } catch (e) { out.error = 'Bad setup: ' + e.message; }
     }
+    // players who left the game (in log order); when the host leaves, the game ends for everybody
+    out.left = [];
+    for (const m of msgs) if (m.k === 'leave' && out.left.indexOf(m.author) < 0) out.left.push(m.author);
+    out.hostLeft = out.left.indexOf(host) >= 0;
     for (let k = 0; k < setups.length; k++) {
       const st = setups[k], p = played.get(st.g);
       if (!p) continue;
@@ -141,6 +163,7 @@
     for (const m of msgs) {
       if (m.k === 'say' && typeof m.text === 'string') out.timeline.push({ kind: 'say', author: m.author, text: m.text.slice(0, 300), ts: m.ts });
       else if (m.k === 'setup' && m.author === host && roundOf.has(m.g)) out.timeline.push({ kind: 'round', round: roundOf.get(m.g), g: m.g });
+      else if (m.k === 'leave' && out.timeline.every(x => !(x.kind === 'left' && x.author === m.author))) out.timeline.push({ kind: 'left', author: m.author, host: m.author === host, ts: m.ts });
     }
     const setup = setups.length ? setups[setups.length - 1] : null;
     if (!setup || !played.get(setup.g)) return out;
@@ -156,7 +179,7 @@
     const isPlayer = u => setup.seats.some(s => s && s.kind === 'human' && s.user === u);
     let ask = null;
     for (const m of msgs) if (m.k === 'restartAsk' && m.g === setup.g && isPlayer(m.author)) ask = m;
-    if (ask) {
+    if (ask && !out.hostLeft) {
       const votes = {};
       votes[ask.author] = true;
       let declinedBy = null;

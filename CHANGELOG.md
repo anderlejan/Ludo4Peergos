@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 – test feedback round 2
+- Online games you play in are always in the menu list now, also games a friend started: the app remembers every
+  online game you open (also from the Peergos News feed) in its data folder, and asks both Peergos chat lists
+  (one of them leaves out some chats). The list refreshes by itself every 30 seconds and when you come back to the app.
+  An invitation still has to be opened once with **Join** in the News feed – before that, apps cannot see it.
+- **Leave game** (replaces "Hand over to the computer"): the other players are told in the chat (with a sound and a
+  message), and the host's computer plays your colour from then on, also in new rounds. If the host leaves, the game
+  ends for everybody. Your menu shows the game as "You left".
+- The full-screen button and setting are gone: Peergos never lets apps use full screen.
+- Rule "three tries" (it was already there, on by default) now says clearly what it does: three tries to roll a 6
+  while none of your tokens is on the board.
+- **One token per square** now holds for all tokens: landing on any token – yours or an opponent's – sends it back to
+  its yard, also on start squares and stars (safe squares are switched off with this rule, so the same rule holds for
+  everybody). Your saved setting from 0.2.0 is carried over. The computer players know the rule.
+- New sound when another player writes in the game chat (different from the other sounds; try it in Settings → Sound),
+  and the chat panel flashes.
+- All calls to Peergos (chat and the app's data folder) are made one at a time, as a safeguard against overlapping
+  updates. (A red "CAS exception updating cryptree node" message seen in tests came from Peergos' own News feed refresh,
+  not from the app.)
+- Fixed: the status said "You's turn" while your own die was rolling.
+- Online protocol 3: games started by 0.3.0 ask 0.2.0 players to update; 0.3.0 still plays 0.1.0/0.2.0 games.
+
 ## 0.2.0 – test feedback round 1
 - Rules can no longer change during a game: each game keeps its own rules and speed. While a game is open,
   Settings shows them read-only ("locked – belongs to this game"); new games take them from Settings.
