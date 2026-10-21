@@ -530,3 +530,6 @@ button { font: inherit; color: inherit; }
 .warn-text { color: var(--warn, var(--acc)); }
 .rule-row .rule-note { display: block; font-size: .78em; color: var(--fg3); margin-top: 2px; }
 .rule-row[data-rule="onePerSquare"] > span:first-child, .rule-row[data-rule="threeTries"] > span:first-child { max-width: 75%; }
+
+/* 0.6.0: slow (not lost) connection */
+.net-state.slow { color: var(--warn, var(--fg2)); }

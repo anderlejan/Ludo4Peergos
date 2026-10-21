@@ -14,7 +14,8 @@ It serves assets/ and implements the parts of /peergos-api the app uses:
   /peergos-api/v0/print/        POST (accepted, ignored)
 Test hooks: GET /mock/state (JSON dump), POST /mock/invite-order {"order": ["bob", ...]},
 POST /mock/join {"chat", "user"}, POST /mock/hide-list {"user", "v0": bool, "v1": bool} (leave chats out of a list),
-POST /mock/hang {"user", "paths": [prefix, ...]} (never answer those GET requests).
+POST /mock/hang {"user", "paths": [prefix, ...]} (never answer those GET requests),
+POST /mock/delay {"user", "paths": [prefix, ...], "seconds": s} (answer those GET requests slowly).
 """
 import json, sys, threading, time, uuid, os, io
 from email.parser import BytesParser
@@ -30,6 +31,7 @@ USERS = []
 INVITE_ORDER = []
 HIDE = {}      # user -> {'v0': bool, 'v1': bool}: pretend Peergos leaves the chats out of that list
 HANG = {}      # user -> [path prefixes]: pretend Peergos never answers these requests (as its chat list can)
+DELAY = {}     # user -> {'paths': [prefixes], 'seconds': s}: slow answers, as for a player far from the server
 LATENCY = float(os.environ.get('MOCK_LATENCY', '0.05'))
 MIME = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.woff2': 'font/woff2', '.json': 'application/json', '.txt': 'text/plain', '.md': 'text/markdown', '.svg': 'image/svg+xml'}
 
@@ -84,6 +86,9 @@ def make_handler(user):
             if any(p.startswith(x) for x in HANG.get(user, [])):
                 time.sleep(3600)
                 return
+            d = DELAY.get(user)
+            if d and any(p.startswith(x) for x in d['paths']):
+                time.sleep(d['seconds'])
             if p == '/mock/state':
                 with LOCK:
                     return self.send(200, json.dumps({'chats': {k: dict(v, joined=list(v['joined'])) for k, v in CHATS.items()},
@@ -158,6 +163,10 @@ def make_handler(user):
             time.sleep(LATENCY)
             if p == '/mock/invite-order':
                 INVITE_ORDER[:] = json.loads(raw or b'{}').get('order', [])
+                return self.send(200)
+            if p == '/mock/delay':
+                req = json.loads(raw or b'{}')
+                DELAY[req['user']] = {'paths': req.get('paths', []), 'seconds': float(req.get('seconds', 0))}
                 return self.send(200)
             if p == '/mock/hang':
                 req = json.loads(raw or b'{}')

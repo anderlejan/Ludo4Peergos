@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 – test feedback round 5
+- Rule "a 6 must bring a token out" with "one token per square": a 6 right after the 6 that brought a token onto the
+  empty start square no longer sends that token home – you move a token on the board instead (the new one can move
+  on by six) and roll again. If you leave it on the start square, a later 6 brings out another one and sends it back
+  (as before). The game says when this applies. Games started before keep the old behaviour.
+- Fixed: an online game could stop for good – the die did not react, or the host's computer player never moved
+  ("Computer is rolling…" forever). A chat update arriving during the turn banner (e.g. the echo of your own move,
+  which comes late on a slow connection) stopped the turn. Also fixed: updates arriving while moves were being shown
+  could leave the board out of step and the die locked, shown as "Not connected – retrying".
+- Far from the server: your moves are sent at once (they no longer wait for a running chat read), a read may take up
+  to 90 s before it counts as failed, and the game shows "Slow connection – waiting for Peergos…" instead of "Not
+  connected" while Peergos is slow. Coming back to the window no longer starts a second read next to a running one.
+- Online protocol 6: only new games that use the new rule together with one token per square ask older apps to update.
+- Repository: a local-only entry removed from `.gitignore`.
+
 ## 0.5.0 – test feedback round 4
 - Fixed: a rule switched on in Settings (e.g. "a 6 must bring a token out") did not reach games started from the
   **New game** dialog – the dialog reused the rules of the previous new game. It now always starts from the Settings

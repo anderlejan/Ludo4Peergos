@@ -57,8 +57,10 @@
    * Messages from index `from` on. Resolves {entries:[{type, author, text, timestamp, joinUsername, inviteUsername}], next, friends}.
    * Every call makes Peergos merge the other members' logs first (that is how new moves arrive).
    */
+  // 0.6.0: far from the server a read can take 25 s and more (measured: +1.2 s per request → 25–27 s), so reads get
+  // 90 s, and sends their own queue – in 0.5.0 a move waited behind a running read before it was even sent.
   async function read(chatId, from) {
-    const r = await call(V1 + enc(chatId) + '?startIndex=' + (from | 0), { method: 'GET', cache: 'no-store' });
+    const r = await S.api(V1 + enc(chatId) + '?startIndex=' + (from | 0), { method: 'GET', cache: 'no-store' }, { queue: 'chat', timeout: 90000 });
     if (!r.ok) throw new Error('read → ' + r.status);
     const j = JSON.parse(r.text);
     const entries = (j.messages || []).map(m => ({
@@ -70,9 +72,9 @@
   }
 
   async function send(chatId, text) {
-    const r = await call(V0 + enc(chatId), {
+    const r = await S.api(V0 + enc(chatId), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
-    });
+    }, { queue: 'chatSend', timeout: 60000 });
     if (r.status !== 201 && r.status !== 200) throw new Error('send → ' + r.status);
     return true;
   }

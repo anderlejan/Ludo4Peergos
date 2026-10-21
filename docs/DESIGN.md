@@ -45,6 +45,9 @@ tools/make_release.py   builds releases/Ludo4Peergos-v<ver>.zip + source zip, ch
 - `safeBlock` (0.5.0, hidden like `protectOwn`, set for every new game): safe squares also work with `onePerSquare` –
   a token on a safe square cannot be captured, so a move onto a safe square holding an opponent is not legal, except a
   token entering on its own start square (it captures). Without the key (older games) `onePerSquare` ignores safe squares.
+- `enterGrace` (0.6.0, hidden, set for every new game): with `mustEnter` + `onePerSquare`, a 6 right after the 6 that
+  brought a token onto the empty start square (`state.last`: own entry, `selfKicked` 0, token still on start,
+  `sixes ≥ 1`) is not forced to enter; the normal moves apply (own tokens protected).
 - Settings are the one source of rules and speed for new games: the New game dialog starts from them and saves back.
 - Legacy option `selfKick` (0.2.0, own tokens only, safe squares still protect) stays in the engine so old games replay
   the same way; Settings turn a saved `selfKick` into `onePerSquare`.
@@ -87,7 +90,7 @@ ignores protocol-2 messages and asks its user to update. Protocol 3 (app 0.3.0) 
 that understands it (`setup` and `leave` = 3, everything else = 2), so a 0.3.0 player can still play in a game a
 0.2.0 host started (only a `leave` is not seen by that host). Protocol 4 (app 0.4.0): a setup is stamped 4 only when its
 rules use `mustEnter` or `onePerSquare`+`protectOwn` (a 0.3.0 app would replay those differently). Protocol 5 (app 0.5.0):
-a setup with `onePerSquare` + `safeSquares` + `safeBlock`.
+a setup with `onePerSquare` + `safeSquares` + `safeBlock`. Protocol 6 (app 0.6.0): `mustEnter` + `onePerSquare` + `enterGrace`.
 
 Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns.
 
@@ -113,6 +116,10 @@ Who runs the computer players online: the host's app. If the host is offline, th
   for the user). Peergos can leave a request unanswered for good – its v1 chat list has no error path when one chat
   fails to load (`buildLatestMessageMap` in AppSandbox.vue, 1.38 and 1.39) – and in 0.3.0 such a call blocked the one
   shared queue, so the Notes window never opened. `tests/mock_peergos.py` `POST /mock/hang` reproduces it.
+  0.6.0: sends have their own queue ('chatSend', 60 s) next to reads ('chat', 90 s); measured far from the server
+  (+1.2 s per request) a read takes 25–27 s, and in 0.5.0 every move waited behind one. One poll at a time.
+  Turn code compares positions (move number, turn, tokens), not state objects: a chat update can hand over an equal
+  state as a new object, and in 0.5.0 that stopped a turn waiting on its banner for good (`tests/browser_test.py` 6).
   The red Peergos toast "CAS exception updating cryptree node" seen in tests came from Peergos' News feed refresh with
   no app running (`tests/peergos/probe_cas_game.py`).
 - Each member's log is append-only and keeps every author's own order, but messages of different authors can

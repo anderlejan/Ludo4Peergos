@@ -546,4 +546,67 @@ test('rule safeBlock (0.5.0): safe squares together with one token per square', 
   }
 });
 
+test('rule enterGrace (0.6.0): a 6 right after bringing a token out moves on instead of kicking it', () => {
+  const rules = { mustEnter: true, onePerSquare: true, protectOwn: true, safeBlock: true, enterGrace: true, threeSixes: false };
+  const g = () => { const s = R.newGame(Object.assign(four(), { rules })); s.turn = 0; return s; };
+  // first 6: must bring a token out
+  let s = g(); s.tokens[0] = [-1, -1, -1, -1];
+  assert.deepStrictEqual(R.legalMoves(s, 6), [0, 1, 2, 3]);
+  s = R.apply(s, { r: 6, t: 0 }).state;
+  assert.deepStrictEqual(s.tokens[0], [0, -1, -1, -1]); assert.strictEqual(s.turn, 0, 'a 6 rolls again');
+  // second 6 straight after: no entering on top of it – the new token moves on by six
+  assert.deepStrictEqual(R.legalMoves(s, 6), [0]);
+  const s2 = R.apply(s, { r: 6, t: 0 }).state;
+  assert.deepStrictEqual(s2.tokens[0], [6, -1, -1, -1]);
+  // third 6: the start square is empty again, so a 6 must bring the next token out (no kick)
+  assert.deepStrictEqual(R.legalMoves(s2, 6), [1, 2, 3]);
+  const s3 = R.apply(s2, { r: 6, t: 1 }).state;
+  assert.deepStrictEqual(s3.tokens[0], [6, 0, -1, -1]);
+  // fourth 6: the grace again – move a token on the board, no kick (the new one would land on the own token at 6,
+  // which is protected, so only the token at 6 can move)
+  assert.deepStrictEqual(R.legalMoves(s3, 6), [0]);
+  // with another token already on the board the second 6 may move either one
+  let t = g(); t.tokens[0] = [-1, -1, 20, -1];
+  t = R.apply(t, { r: 6, t: 0 }).state;
+  assert.deepStrictEqual(R.legalMoves(t, 6), [0, 2]);
+  // the player leaves the new token on the start square (moves the other) – a later 6 brings out another and kicks it
+  t = R.apply(t, { r: 6, t: 2 }).state;
+  assert.deepStrictEqual(t.tokens[0], [0, -1, 26, -1]);
+  assert.deepStrictEqual(R.legalMoves(t, 6), [1, 3], 'no grace any more: must enter');
+  const tk = R.apply(t, { r: 6, t: 1 });
+  assert.deepStrictEqual(tk.state.tokens[0], [-1, 0, 26, -1]);
+  assert.ok(tk.events.some(e => e.type === 'selfCapture' && e.token === 0));
+  // an entry that sent an own token home (start was not empty) gives no grace for the next 6
+  assert.deepStrictEqual(R.legalMoves(tk.state, 6), [0, 3], 'must enter again (and kick the token that just came out)');
+  // the grace only follows a 6 that brought a token out in this turn: on a new turn a token waiting on start is kicked
+  let n = g(); n.tokens[0] = [0, -1, -1, -1]; n.last = null; n.sixes = 0;
+  assert.deepStrictEqual(R.legalMoves(n, 6), [1, 2, 3]);
+  // no move at all after the grace (the new token is blocked by an own token at 6): the turn passes, nothing is kicked
+  let b = g(); b.tokens[0] = [-1, -1, -1, -1];
+  b = R.apply(b, { r: 6, t: 0 }).state; b.tokens[0][3] = 6; // own token six squares ahead (set up directly)
+  assert.deepStrictEqual(R.legalMoves(b, 6), [3], 'only the other token can move');
+  b.tokens[0][3] = 56; b.tokens[0][2] = 6; b.tokens[0][1] = 56; // both others home except one blocking at 6
+  assert.deepStrictEqual(R.legalMoves(b, 6), [2]);
+  // games before 0.6.0 (no enterGrace): the second 6 kicks the new token as before
+  let o = R.newGame(Object.assign(four(), { rules: Object.assign({}, rules, { enterGrace: false }) })); o.turn = 0;
+  o = R.apply(o, { r: 6, t: 0 }).state;
+  assert.deepStrictEqual(R.legalMoves(o, 6), [1, 2, 3]);
+  // protocol: such games need protocol 6; a 0.5.0 app would replay them differently
+  assert.strictEqual(P.msg('setup', { rules }).v, 6);
+  assert.strictEqual(P.msg('setup', { rules: Object.assign({}, rules, { mustEnter: false, safeSquares: true }) }).v, 5);
+  // 500 bot games with the rule finish and never put two tokens on one square
+  const rnd = rng(6060);
+  for (let k = 0; k < 500; k++) {
+    let st = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules: Object.assign({}, rules, { threeSixes: k % 2 === 0 }) });
+    let steps = 0;
+    while (!st.over) {
+      const r = 1 + Math.floor(rnd() * 6); st = R.apply(st, { r, t: AI.choose(st, r, st.seats[st.turn].level, rnd) }).state;
+      const cells = [];
+      for (let c = 0; c < 4; c++) for (const q of st.tokens[c]) if (q >= 0 && q <= R.LAST_TRACK) cells.push(R.trackIndex(c, q));
+      assert.strictEqual(new Set(cells).size, cells.length);
+      if (++steps > 8000) throw new Error('no end');
+    }
+  }
+});
+
 console.log((process.exitCode ? 'FAILED' : 'OK') + ' – ' + passed + ' tests passed');

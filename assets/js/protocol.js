@@ -5,10 +5,11 @@
   const R = (root.L4P && root.L4P.Rules) || (typeof require !== 'undefined' ? require('./rules.js') : null);
 
   const PREFIX = 'L4P1 ';
-  const PROTOCOL = 5; // 2 (app 0.2.0): speed, round, restartAsk/restartVote, rule selfKick
+  const PROTOCOL = 6; // 2 (app 0.2.0): speed, round, restartAsk/restartVote, rule selfKick
                      // 3 (app 0.3.0): leave, rule onePerSquare
                      // 4 (app 0.4.0): rules mustEnter and protectOwn (only setups that use them are stamped 4)
                      // 5 (app 0.5.0): rule safeBlock (safe squares together with one token per square)
+                     // 6 (app 0.6.0): rule enterGrace (a 6 after bringing a token out does not kick it)
 
   function b64urlEncode(str) {
     const bytes = new TextEncoder().encode(str);
@@ -57,6 +58,7 @@
   /** A setup needs protocol 4 only when its rules use something a 0.3.0 app does not know (it would replay differently). */
   function setupNeeds(rules) {
     const r = rules || {};
+    if (r.mustEnter && r.onePerSquare && r.enterGrace) return 6;
     if (r.onePerSquare && r.safeSquares && r.safeBlock) return 5;
     return r.mustEnter || (r.onePerSquare && r.protectOwn) ? 4 : 3;
   }

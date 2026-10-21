@@ -66,6 +66,10 @@
     safeBlock: false,        // 0.5.0: safe squares also work with onePerSquare – a token there cannot be captured, so no
                              // other token may land there (except a token entering on its own start square, which
                              // sends the opponent home). Hidden like protectOwn; games before 0.5.0 stay without it.
+    enterGrace: false,       // 0.6.0 (hidden, set for new games): with mustEnter + onePerSquare, a 6 right after a 6 that
+                             // brought a token onto the empty start square does not have to enter (it would send that
+                             // token home): the player moves a token on the board instead. If the token is left on the
+                             // start square, a later 6 enters and sends it home as before.
   });
 
   function normalizeRules(r) {
@@ -156,13 +160,22 @@
     return state.rules.threeSixes && roll === 6 && state.sixes === 2;
   }
 
+  /** enterGrace: the previous action of this turn was a 6 that brought a token onto the (then empty) start square and
+   *  that token is still there – so a 6 now is not forced to enter on top of it. */
+  function justEnteredGrace(state) {
+    const r = state.rules, L = state.last, c = state.turn;
+    if (!(r.enterGrace && r.onePerSquare && r.mustEnter) || !L || state.sixes < 1) return false;
+    return L.color === c && L.roll === 6 && L.from === -1 && L.to === 0 && state.tokens[c][L.token] === 0 &&
+      !(L.selfKicked > 0); // the start square was not empty before (an own token was sent home): no grace
+  }
+
   /** Token indexes the player to move may move with `roll`. */
   function legalMoves(state, roll) {
     if (state.over) return [];
     if (isThirdSix(state, roll)) return [];
     const c = state.turn, out = [], r = state.rules, mine = state.tokens[c];
     // "a 6 must bring a token out": the only moves are the tokens in the yard (an own token on the start square goes back)
-    if (r.mustEnter && roll === 6) {
+    if (r.mustEnter && roll === 6 && !justEnteredGrace(state)) {
       const yard = [0, 1, 2, 3].filter(i => mine[i] === -1);
       if (yard.length) return yard;
     }
@@ -304,7 +317,8 @@
       }
     }
     s.n = state.n + 1;
-    s.last = { color: c, roll: r, token: t, from: move ? move.from : null, to: move ? move.to : null, captured };
+    s.last = { color: c, roll: r, token: t, from: move ? move.from : null, to: move ? move.to : null, captured,
+      selfKicked: events.filter(e => e.type === 'selfCapture').length };
     return { state: s, events };
   }
 
@@ -325,7 +339,7 @@
   const Rules = {
     COLORS, START, FINISH, LAST_TRACK, TRACK, TRACK_LEN, HOME_COL, YARD, YARD_SPOTS, CENTER_SPOTS, STARS, SAFE,
     DEFAULT_RULES, normalizeRules, normalizeSeat, newGame, clone, legalMoves, target, capturesAt, apply, cellOf,
-    trackIndex, isSafeCell, protects, tokensOut, activeColors, nextColor, progress, replay, isThirdSix,
+    trackIndex, isSafeCell, protects, justEnteredGrace, tokensOut, activeColors, nextColor, progress, replay, isThirdSix,
   };
   root.L4P = root.L4P || {};
   root.L4P.Rules = Rules;

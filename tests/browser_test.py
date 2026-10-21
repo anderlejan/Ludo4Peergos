@@ -198,7 +198,22 @@ def main():
             toks = pg.evaluate('L4P.App.game.state.tokens[%d]' % me)
             ok('a second 6 brought a second token out (not the one already out moved on)', sorted(toks) == [-1, -1, 0, 0], json.dumps(toks))
             ok('the game said why ("A 6 must bring a token out")', 'must bring a token out' in pg.inner_text('body'))
-            pg.evaluate("L4P.App.set({rules: Object.assign({}, L4P.App.settings().rules, {mustEnter: false}), autoRoll: true})")
+            # 0.6.0 (enterGrace): with one token per square, the 6 right after bringing a token out moves it on
+            pg.evaluate("L4P.App.set({rules: Object.assign({}, L4P.App.settings().rules, {mustEnter: true, onePerSquare: true}), autoRoll: false, autoMove: true, anim: 'instant'})")
+            pg.evaluate("() => L4P.App.quickGame(1)")
+            pg.wait_for_function('L4P.App.game && L4P.App.game.state && L4P.App.game.sess.rec.setup.rules.enterGrace === true')
+            me = pg.evaluate("L4P.App.game.state.seats.findIndex(s => s && s.kind === 'human')")
+            end = time.time() + 30
+            rolls = 0
+            while time.time() < end and rolls < 2:
+                if pg.evaluate("L4P.App.game.phase === 'roll' && L4P.App.game.state.turn === %d" % me):
+                    pg.evaluate("document.getElementById('die').click()"); rolls += 1
+                    time.sleep(1.0)
+                time.sleep(0.1)
+            toks = pg.evaluate('L4P.App.game.state.tokens[%d]' % me)
+            ok('one token per square: 6 brings a token out, the next 6 moves it on by six (not kicked)', sorted(toks) == [-1, -1, -1, 6], json.dumps(toks))
+            ok('the game said why ("can move on")', 'can move on' in pg.inner_text('body'))
+            pg.evaluate("L4P.App.set({rules: Object.assign({}, L4P.App.settings().rules, {mustEnter: false, onePerSquare: false}), autoRoll: true})")
             pg.reload(); pg.wait_for_function('window.L4P && window.L4P.App && document.querySelector("#main")')
             time.sleep(1.0)
             pg.click('#btn-settings')
@@ -412,6 +427,41 @@ def main():
             post('/mock/hang', {'user': 'carol', 'paths': []})
             ok('no script errors (hanging Peergos call)', not [e for e in c.errors if 'did not answer' not in e], '; '.join(c.errors[:3]))
             c.context.close()
+
+            print('6. a far-away player (slow chat reads) who switches windows: the game never stalls (0.5.0 did)')
+            a = new_page(browser, 'alice')
+            a.evaluate("L4P.App.set({anim: 'fast', autoRoll: true, autoMove: true, sound: false, confirmLeave: false, rules: L4P.Rules.DEFAULT_RULES})")
+            a.click('#act-friends')
+            a.wait_for_selector('.dlg-new')
+            a.click('.seat-row:nth-child(2) .seg-btn:has-text("Computer")')
+            post('/mock/invite-order', {'order': ['bob']})
+            a.click('.dlg-new .btn.primary')
+            a.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=15000)
+            chat3 = a.evaluate('L4P.App.game.sess.chatId')
+            post('/mock/join', {'chat': chat3, 'user': 'bob'})
+            post('/mock/delay', {'user': 'bob', 'paths': ['/peergos-api/v1/chat/'], 'seconds': 2.5})
+            b = new_page(browser, 'bob', '&chatId=' + urllib.request.quote(chat3, safe='$'))
+            b.evaluate("L4P.App.set({anim: 'fast', autoRoll: true, autoMove: true, sound: false, confirmLeave: false})")
+            b.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=30000)
+            end = time.time() + 90; k = 0; last_n = -1; last_t = time.time(); stalled = None
+            while time.time() < end:
+                k += 1
+                if k % 7 == 0:
+                    b.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+                for pg in (a, b):
+                    pg.evaluate("() => { const g = L4P.App.game; if (g && g.phase === 'pick') { const t = document.querySelector('.tok.pickable'); if (t) t.dispatchEvent(new MouseEvent('click', {bubbles: true})); } }")
+                sa = a.evaluate("(() => { const g = L4P.App.game; return {n: g.state.n, over: g.state.over, phase: g.phase}; })()")
+                if sa['n'] != last_n: last_n, last_t = sa['n'], time.time()
+                elif time.time() - last_t > 30 and not sa['over']:
+                    stalled = sa; break
+                if sa['over']: break
+                time.sleep(0.4)
+            sb = b.evaluate("(() => { const g = L4P.App.game; return {n: g.state.n, net: document.querySelector('.net-state').textContent}; })()")
+            ok('no stall in 90 s (moves keep coming: %d)' % last_n, stalled is None and last_n >= 15, json.dumps(stalled))
+            ok('bob is never shown "Not connected" for slow reads', 'Not connected' not in sb['net'], sb['net'])
+            post('/mock/delay', {'user': 'bob', 'paths': [], 'seconds': 0})
+            ok('no script errors (slow reads)', not [e for e in a.errors + b.errors if 'did not answer' not in e], '; '.join((a.errors + b.errors)[:3]))
+            a.context.close(); b.context.close()
             browser.close()
     finally:
         mock.terminate()

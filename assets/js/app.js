@@ -53,6 +53,7 @@
     if (!had && n.onePerSquare) n.safeSquares = false;
     n.protectOwn = true; // 0.4.0: own tokens are protected in every new game (see Rules.legalMoves)
     n.safeBlock = true;  // 0.5.0: safe squares work together with one token per square
+    n.enterGrace = true; // 0.6.0: a second 6 right after bringing a token out moves on instead of kicking it
     return n;
   }
   let settings = Object.assign({}, DEFAULTS, S.lsGet('settings', {}));
@@ -207,7 +208,7 @@
   function rulesShort(rules) {
     const r = R.normalizeRules(rules), d = R.DEFAULT_RULES, diff = [];
     // selfKick only shows in old (0.2.0) games; protectOwn is part of "one token per square" since 0.4.0, not an option
-    const keys = Object.keys(d).filter(k => (k !== 'selfKick' || r.selfKick) && k !== 'protectOwn' && k !== 'safeBlock');
+    const keys = Object.keys(d).filter(k => (k !== 'selfKick' || r.selfKick) && ['protectOwn', 'safeBlock', 'enterGrace'].indexOf(k) < 0);
     for (const k of keys) if (r[k] !== d[k] && !(k === 'safeSquares' && r.onePerSquare && !r.safeBlock)) diff.push(t('short.' + k));
     const full = keys.map(k => {
       if (k === 'enterOn') return t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
@@ -631,7 +632,7 @@
     }
     li.push(t(r.finishBonus ? 'help.finishBonus.on' : 'help.finishBonus.off') + ' ' + t('help.exact'));
     li.push(t(r.threeTries ? 'help.threeTries.on' : 'help.threeTries.off', { enter }));
-    if (r.mustEnter) li.push(t('help.mustEnter.on'));
+    if (r.mustEnter) li.push(t('help.mustEnter.on') + (r.onePerSquare && r.enterGrace ? ' ' + t('help.mustEnter.grace') : ''));
     li.push(t(r.endMode === 'all' ? 'help.end.all' : 'help.end.first'));
     return '<p>' + t('help.intro', { enter }) + '</p><ul class="help-rules">' + li.map(x => '<li>' + x + '</li>').join('') + '</ul>';
   }
@@ -1048,6 +1049,14 @@
       next();
     }
 
+    // 0.6.0: a chat read can hand over an equal state as a new object (e.g. the echo of our own move); compare the
+    // position (game and move number), not the object – in 0.5.0 that echo, landing during a turn banner, stopped the
+    // turn for good (the host's computer player never moved, or the die did not react).
+    function samePosition(a, b) {
+      return !!a && !!b && (a === b || (a.n === b.n && a.turn === b.turn && a.over === b.over && a.sixes === b.sixes &&
+        JSON.stringify(a.tokens) === JSON.stringify(b.tokens)));
+    }
+
     let nextTimer = null;
     async function next() {
       clearTimeout(nextTimer);
@@ -1071,7 +1080,7 @@
         updateStatus();
         if (changed && ctl === 'me' && isMine(st.seats[st.turn])) Sound.play('turn');
         await showBanner(st.turn, bannerText(st.turn, changed), changed ? sp().banner : Math.round(sp().banner * 0.6));
-        if (mySeq !== self.seq || self.stopped || self.state !== st) return;
+        if (mySeq !== self.seq || self.stopped || !samePosition(self.state, st)) return;
       }
       if (ctl === 'me') {
         self.phase = 'roll';
@@ -1095,7 +1104,7 @@
       self.busy = true;
       await dieEl.roll(r, st.turn, sp().dice);
       self.busy = false;
-      if (self.stopped || self.state !== st) return;
+      if (self.stopped || !samePosition(self.state, st)) return;
       const tk = AI.choose(st, r, st.seats[st.turn].level || 'normal');
       if (tk === -1) await sleep(Math.round(sp().pause * 0.6));
       await commit({ r, t: tk });
@@ -1111,7 +1120,7 @@
       updateStatus();
       await dieEl.roll(r, st.turn, sp().dice);
       self.busy = false;
-      if (self.stopped || self.state !== st) return;
+      if (self.stopped || !samePosition(self.state, st)) return;
       const legal = R.legalMoves(st, r);
       self.roll = r; self.legal = legal;
       // make the rule visible when it decides the move
@@ -1119,6 +1128,8 @@
           st.tokens[st.turn].some(p => p >= 0 && p < R.FINISH)) {
         toast(t('game.mustEnterNow'), 'info', 3000);
         hint.textContent = t('game.mustEnterNow');
+      } else if (st.rules.mustEnter && r === 6 && R.justEnteredGrace(st) && st.tokens[st.turn].some(p => p === -1)) {
+        toast(t('game.graceNow'), 'info', 3500);
       }
       if (!legal.length) {
         status.textContent = R.isThirdSix(st, r) ? t('game.threeSixes') : t('game.noMove');
@@ -1205,8 +1216,19 @@
     async function poll() {
       if (self.stopped) return;
       if (document.hidden) { schedulePoll(4000); return; }
+      // 0.6.0: one poll at a time – coming back to the window used to start a second read while a slow one ran
+      if (self.polling) { self.pollAgain = true; return; }
+      self.polling = true;
+      let res = null;
+      const slow = setTimeout(() => { if (self.polling && !netState.classList.contains('bad')) { netState.textContent = t('game.slow'); netState.className = 'net-state slow'; } }, 8000);
       try {
-        const res = await Net.read(sess.chatId, sess.next);
+        res = await Net.read(sess.chatId, sess.next);
+      } catch (e) {
+        console.warn('poll', e);
+        netState.textContent = t('game.offline');
+        netState.className = 'net-state bad';
+      } finally { clearTimeout(slow); }
+      if (res) try {
         sess.next = res.next;
         let fresh = 0;
         for (const e of res.entries) {
@@ -1219,10 +1241,11 @@
         if (fresh || !self.replay) await integrate();
         else { drawPlayers(); if (self.phase === 'wait') updateStatus(); }
       } catch (e) {
-        console.warn('poll', e);
-        netState.textContent = t('game.offline');
-        netState.className = 'net-state bad';
+        console.warn('integrate', e); // not a network problem – never shown as "Not connected"
+        self.busy = false;
       }
+      self.polling = false;
+      if (self.pollAgain) { self.pollAgain = false; schedulePoll(50); return; }
       schedulePoll(POLL_MS || settings.pollMs || (self.phase === 'wait' || (self.replay && self.replay.restart) ? (Date.now() - self.lastChange < 60000 ? 1500 : 3000) : 5000));
     }
     function schedulePoll(ms) { clearTimeout(self.pollTimer); if (!self.stopped) self.pollTimer = setTimeout(poll, ms); }
@@ -1266,7 +1289,8 @@
       if (self.busy) { drawChat(); drawRestart(); drawActions(); return; } // the running animation picks it up in afterChange
       const pending = rep.history.filter(x => x.n >= prevShown);
       if (!pending.length) {
-        self.state = rep.state; drawChat(); drawPlayers(); drawRestart(); drawActions(); maybeStartRound();
+        if (!(self.state && self.state.n === rep.state.n)) { self.state = rep.state; self.shownN = rep.state.n; }
+        drawChat(); drawPlayers(); drawRestart(); drawActions(); maybeStartRound();
         if (hostGone() && self.phase !== 'ended') { self.seq++; clearTimeout(nextTimer); next(); }
         // a player left while it was their turn: this app (the host's) may have to play that colour now
         else if (self.phase === 'wait' && self.state && !self.state.over && controlOf(self.state, self.state.turn) !== 'remote') { self.seq++; clearTimeout(nextTimer); next(); }
@@ -1284,6 +1308,7 @@
       self.seq++;
       board.setMovable(-1, []);
       let st = self.state;
+      try {
       for (const item of pending) {
         if (self.stopped) return;
         const res = R.apply(st, item.action);
@@ -1302,9 +1327,19 @@
         await showAction(item.action, res, by);
         st = res.state;
       }
-      self.state = self.replay.state;
+      } catch (e) {
+        // the shown board and the chat disagree (should not happen): show the chat's position instead of getting stuck
+        console.warn('resync', e);
+        self.state = self.replay.state; self.shownN = self.state.n;
+        board.render(self.state);
+      } finally {
+        self.busy = false;
+      }
       self.bannerKey = null;
-      self.busy = false;
+      // moves that arrived while these were animated: show them too (0.5.0 jumped to them but kept the old move counter,
+      // so the next update re-applied moves that were already on the board)
+      if (!self.stopped && self.replay.setup && self.replay.state.n > self.shownN) { await integrate(); return; }
+      self.state = self.replay.state; self.shownN = self.state.n;
       afterChange();
     }
 
