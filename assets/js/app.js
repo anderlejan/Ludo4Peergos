@@ -30,7 +30,7 @@
   const DEFAULTS = {
     theme: 'auto', lang: 'auto', sound: true, volume: 0.6, anim: 'normal', tokens: 'glossy',
     autoMove: true, autoRoll: false, hints: true, confirmLeave: true, showNotes: true,
-    level: 'normal', rules: Object.assign({}, R.DEFAULT_RULES), quickOpponents: 3,
+    level: 'normal', rules: settingsRules(R.DEFAULT_RULES), quickOpponents: 3,
     lastLocal: null, lastOnline: null, settingsSection: 'look', savedAt: 0,
   };
   // Durations in ms. 0.2.0: twice as slow as 0.1.0 (step, think, dice, pause) plus a turn banner.
@@ -46,9 +46,13 @@
   /** Rules kept in Settings (defaults for new games). 0.2.0 had "selfKick" (own tokens only); since 0.3.0 the
    *  option is "one token per square" for every token, so a saved selfKick becomes onePerSquare. */
   function settingsRules(r) {
+    const had = !!(r && typeof r === 'object' && r.safeBlock === true); // only 0.5.0+ settings carry it
     const n = R.normalizeRules(r);
     if (n.selfKick) { n.selfKick = false; n.onePerSquare = true; }
+    // before 0.5.0 one token per square switched the safe squares off (the switch was locked): keep that as it was
+    if (!had && n.onePerSquare) n.safeSquares = false;
     n.protectOwn = true; // 0.4.0: own tokens are protected in every new game (see Rules.legalMoves)
+    n.safeBlock = true;  // 0.5.0: safe squares work together with one token per square
     return n;
   }
   let settings = Object.assign({}, DEFAULTS, S.lsGet('settings', {}));
@@ -73,6 +77,7 @@
 
   /** Changes settings and saves at once (no Save button anywhere). */
   function set(patch, opts) {
+    if (patch && patch.rules) patch = Object.assign({}, patch, { rules: settingsRules(patch.rules) });
     Object.assign(settings, patch);
     settings.savedAt = Date.now();
     S.lsSet('settings', settings);
@@ -202,8 +207,8 @@
   function rulesShort(rules) {
     const r = R.normalizeRules(rules), d = R.DEFAULT_RULES, diff = [];
     // selfKick only shows in old (0.2.0) games; protectOwn is part of "one token per square" since 0.4.0, not an option
-    const keys = Object.keys(d).filter(k => (k !== 'selfKick' || r.selfKick) && k !== 'protectOwn');
-    for (const k of keys) if (r[k] !== d[k] && !(k === 'safeSquares' && r.onePerSquare)) diff.push(t('short.' + k));
+    const keys = Object.keys(d).filter(k => (k !== 'selfKick' || r.selfKick) && k !== 'protectOwn' && k !== 'safeBlock');
+    for (const k of keys) if (r[k] !== d[k] && !(k === 'safeSquares' && r.onePerSquare && !r.safeBlock)) diff.push(t('short.' + k));
     const full = keys.map(k => {
       if (k === 'enterOn') return t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
       if (k === 'endMode') return t('rule.endMode') + ': ' + t('rule.endMode.' + r.endMode);
@@ -395,9 +400,11 @@
     if (mode === 'online' && !Net.available) { toast(t('home.onlineUnavailable'), 'warn'); return; }
     const last = mode === 'online' ? settings.lastOnline : settings.lastLocal;
     const seats = (last && Array.isArray(last.seats) && last.seats.length === 4 ? last.seats : defaultSeats(mode)).map(s => Object.assign({}, s));
-    const rules = settingsRules(last && last.rules ? last.rules : settings.rules);
+    // 0.5.0: rules and speed always start from Settings and changes here are saved there (before, the dialog reused the
+    // rules of the previous new game, so a rule switched on in Settings did not reach games started here)
+    const rules = settingsRules(settings.rules);
     let first = last && last.first != null ? last.first : 'random';
-    let speed = speedId(last && last.speed ? last.speed : settings.anim);
+    let speed = speedId(settings.anim);
     const kinds = mode === 'online' ? ['me', 'friend', 'bot', 'empty'] : ['me', 'bot', 'local', 'empty'];
     const kindLabel = k => t(k === 'me' ? 'new.seat.me' : k === 'bot' ? 'new.seat.bot' : k === 'local' ? 'new.seat.local' : k === 'friend' ? 'new.seat.friend' : 'new.seat.empty');
     const err = h('div', { class: 'form-error', role: 'alert' });
@@ -405,7 +412,7 @@
 
     function remember() {
       const key = mode === 'online' ? 'lastOnline' : 'lastLocal';
-      set({ [key]: { seats, rules, first, speed } }, { quiet: true });
+      set({ [key]: { seats, rules, first, speed }, rules: settingsRules(rules), anim: speed }, { quiet: true });
     }
     function validate() {
       const n = seats.filter(s => s.kind !== 'empty').length;
@@ -498,8 +505,9 @@
         row('sixBonus', toggle('sixBonus')), row('threeSixes', toggle('threeSixes')),
         row('captureBonus', toggle('captureBonus')), row('finishBonus', toggle('finishBonus')),
         row('onePerSquare', toggle('onePerSquare'), readOnly && one && !rules.protectOwn ? t('rule.onePerOld') : null),
-        row('safeSquares', toggle('safeSquares', one), one ? t('rule.safeOff') : null),
-        rules.selfKick ? row('selfKick', toggle('selfKick', true)) : null,
+        // since 0.5.0 safe squares also work with one token per square; games started before keep them off
+        row('safeSquares', toggle('safeSquares', one && !rules.safeBlock), one ? t(rules.safeBlock ? 'rule.safeWithOne' : 'rule.safeOff') : null),
+        ...(rules.selfKick ? [row('selfKick', toggle('selfKick', true))] : []),
         row('endMode', choice('endMode', ['first', 'all'])));
     }
     box = h('div', { class: 'rules' + (readOnly ? ' read-only' : '') });
@@ -538,7 +546,7 @@
     const status = h('span', { class: 'save-state' });
     const showSave = s => {
       status.className = 'save-state ' + s;
-      status.replaceChildren(s === 'saved' ? icon('check') : null, t(s === 'saved' ? 'set.saved' : s === 'saving' ? 'set.saving' : 'set.saveError'));
+      status.replaceChildren(...(s === 'saved' ? [icon('check')] : []), t(s === 'saved' ? 'set.saved' : s === 'saving' ? 'set.saving' : 'set.saveError'));
     };
     showSave(saveState);
     saveListeners.add(showSave);
@@ -597,7 +605,7 @@
       h('button', { class: 'btn danger', onclick: async () => {
         if (!(await confirm(t('set.resetConfirm'), t('set.reset'), { danger: true }))) return;
         const keep = { lastLocal: settings.lastLocal, lastOnline: settings.lastOnline };
-        settings = Object.assign({}, DEFAULTS, keep, { rules: Object.assign({}, R.DEFAULT_RULES) });
+        settings = Object.assign({}, DEFAULTS, keep, { rules: settingsRules(R.DEFAULT_RULES) });
         set({});
         if (root.UserNotesUI && root.UserNotesUI.clearPrefs) root.UserNotesUI.clearPrefs();
         redraw();
@@ -612,7 +620,10 @@
     li.push(t(r.sixBonus ? 'help.sixBonus.on' : 'help.sixBonus.off'));
     if (r.sixBonus) li.push(t(r.threeSixes ? 'help.threeSixes.on' : 'help.threeSixes.off'));
     li.push(t('help.capture') + t(r.captureBonus ? 'help.capture.bonus' : 'help.capture.noBonus'));
-    if (r.onePerSquare && r.protectOwn) li.push(t('help.onePer.protect') + (r.mustEnter ? ' ' + t('help.onePer.protectExcept') : ''));
+    if (r.onePerSquare && r.protectOwn) {
+      li.push(t(r.safeBlock ? 'help.onePer.protect2' : 'help.onePer.protect') + (r.mustEnter ? ' ' + t('help.onePer.protectExcept') : ''));
+      if (r.safeBlock) li.push(t(r.safeSquares ? 'help.safe.onePer' : 'help.safe.off'));
+    }
     else if (r.onePerSquare) li.push(t('help.onePer.on'));
     else {
       li.push(t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
@@ -1103,6 +1114,12 @@
       if (self.stopped || self.state !== st) return;
       const legal = R.legalMoves(st, r);
       self.roll = r; self.legal = legal;
+      // make the rule visible when it decides the move
+      if (st.rules.mustEnter && r === 6 && legal.length && legal.every(i => st.tokens[st.turn][i] === -1) &&
+          st.tokens[st.turn].some(p => p >= 0 && p < R.FINISH)) {
+        toast(t('game.mustEnterNow'), 'info', 3000);
+        hint.textContent = t('game.mustEnterNow');
+      }
       if (!legal.length) {
         status.textContent = R.isThirdSix(st, r) ? t('game.threeSixes') : t('game.noMove');
         hint.textContent = '';

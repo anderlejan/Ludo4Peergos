@@ -201,6 +201,18 @@ def main():
         stored = fa.evaluate("fetch('/peergos-api/v0/data/settings.json').then(r => r.text())")
         ok('settings.json in the Peergos data folder holds the theme', json.loads(stored).get('theme') == 'aurora', stored[:200])
         fa.evaluate("L4P.App.set({theme: 'midnight'})")
+        # 0.5.0: a rule switched on in Settings reaches the New game dialog; no stray "null" in Settings
+        fa.click('#btn-settings')
+        fa.click('.set-tab[data-sec="rules"]')
+        fa.click('.rule-row[data-rule="mustEnter"] .slider')
+        time.sleep(1.5)
+        ok('no stray "null" in Settings (header and rules)', 'null' not in fa.inner_text('.dlg-settings'), fa.inner_text('.dlg-settings')[:200])
+        fa.evaluate("document.querySelector('.dlg-settings .dlg-close') ? document.querySelector('.dlg-settings .dlg-close').click() : null")
+        fa.click('#act-new')
+        fa.wait_for_selector('.dlg-new')
+        ok('the New game dialog has the rule switched on in Settings', fa.evaluate("document.querySelector('.dlg-new #rule-mustEnter').checked") is True)
+        fa.evaluate("[...document.querySelectorAll('.dlg-new .btn')].find(b => !b.classList.contains('primary')).click()")
+        fa.evaluate("L4P.App.set({rules: Object.assign({}, L4P.App.settings().rules, {mustEnter: false})})")
 
         print('4. alice creates an online game', flush=True)
         fa.evaluate("L4P.App.set({anim: 'instant', autoRoll: true, autoMove: true, sound: false, pollMs: 600})")

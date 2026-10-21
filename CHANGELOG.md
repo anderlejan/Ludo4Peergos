@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 – test feedback round 4
+- Fixed: a rule switched on in Settings (e.g. "a 6 must bring a token out") did not reach games started from the
+  **New game** dialog – the dialog reused the rules of the previous new game. It now always starts from the Settings
+  rules and speed, and changes made in the dialog are saved to Settings (one set of rules for new games).
+- When the rule decides your move, the game says so: "A 6 must bring a token out of the yard."
+- Fixed: "null" shown next to "Saving…" in Settings and under "Safe squares" in the rules list.
+- Safe squares can be switched on and off again together with "one token per square" (it was locked off). With both
+  on, a token on a safe square cannot be captured, so no other token can move onto it – except a token coming out onto
+  its own start square, which sends the opponent there home. If you had "one token per square" on, safe squares stay
+  off until you switch them on. Games started before keep their rules.
+- Online protocol 5: only new games that use safe squares together with one token per square ask older apps to update.
+
 ## 0.4.0 – test feedback round 3
 - New rule (off by default): **a 6 must bring a token out** of the yard while one is there. With "one token per
   square" this also sends your own token on the start square back to the yard – the one case where that happens.

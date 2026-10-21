@@ -498,10 +498,52 @@ test('protocol: setups that use the 0.4.0 rules need protocol 4, others stay at 
   assert.strictEqual(P.msg('setup', { rules: { onePerSquare: true, protectOwn: true } }).v, 4);
   assert.strictEqual(P.msg('setup', { rules: { protectOwn: true } }).v, 3, 'protectOwn alone changes nothing');
   assert.strictEqual(P.msg('setup', { rules: {} }).v, 3);
-  assert.strictEqual(P.PROTOCOL, 4);
+  assert.ok(P.PROTOCOL >= 4);
   // a 0.3.0 app (protocol 3) would count a protocol-4 setup as unknown instead of replaying it wrongly
   const m = P.msg('setup', { g: 'X', seats: [{ kind: 'human', user: 'a' }, { kind: 'bot' }, null, null], rules: { mustEnter: true } });
   assert.ok(m.v > 3);
+});
+
+test('rule safeBlock (0.5.0): safe squares together with one token per square', () => {
+  const rules = { onePerSquare: true, protectOwn: true, safeSquares: true, safeBlock: true };
+  // yellow (colour 2) on star cell 8 = yellow rel 34; red at rel 5 rolls 3 → would land on it: not allowed
+  const s = R.newGame(Object.assign(four(), { rules }));
+  s.tokens[0] = [5, 20, -1, -1]; s.tokens[2] = [34, -1, -1, -1];
+  assert.deepStrictEqual(R.legalMoves(s, 3), [1], 'the safe square with an opponent is blocked');
+  assert.deepStrictEqual(R.capturesAt(s, 0, 8), [], 'and nobody is captured there');
+  // an empty safe square can be used, a normal square captures as before
+  s.tokens[2] = [-1, -1, -1, -1]; s.tokens[1] = [6, -1, -1, -1]; // green rel 6 = cell 19
+  assert.deepStrictEqual(R.legalMoves(s, 3), [0, 1]);
+  const s2 = R.newGame(Object.assign(four(), { rules })); s2.tokens[0] = [5, -1, -1, -1]; s2.tokens[1] = [45, -1, -1, -1]; // green rel 45 = cell 6
+  assert.strictEqual(R.apply(s2, { r: 1, t: 0 }).state.tokens[1][0], -1, 'capture on a normal square');
+  // entering on the own start square captures an opponent standing there
+  const s3 = R.newGame(Object.assign(four(), { rules })); s3.tokens[0] = [-1, -1, -1, -1]; s3.tokens[1] = [39, -1, -1, -1]; // green rel 39 = cell 0
+  assert.deepStrictEqual(R.legalMoves(s3, 6), [0, 1, 2, 3]);
+  const r3 = R.apply(s3, { r: 6, t: 0 });
+  assert.strictEqual(r3.state.tokens[1][0], -1); assert.strictEqual(r3.state.tokens[0][0], 0);
+  // safe squares switched off: one token per square captures everywhere (as in 0.3.0/0.4.0)
+  const s4 = R.newGame(Object.assign(four(), { rules: Object.assign({}, rules, { safeSquares: false }) }));
+  s4.tokens[0] = [5, -1, -1, -1]; s4.tokens[2] = [34, -1, -1, -1];
+  assert.strictEqual(R.apply(s4, { r: 3, t: 0 }).state.tokens[2][0], -1);
+  // games before 0.5.0 (no safeBlock): safe squares are ignored with one token per square, as before
+  const old = R.newGame(Object.assign(four(), { rules: { onePerSquare: true, protectOwn: true, safeSquares: true } }));
+  old.tokens[0] = [5, -1, -1, -1]; old.tokens[2] = [34, -1, -1, -1];
+  assert.strictEqual(R.apply(old, { r: 3, t: 0 }).state.tokens[2][0], -1);
+  assert.strictEqual(P.msg('setup', { rules }).v, 5);
+  assert.strictEqual(P.msg('setup', { rules: Object.assign({}, rules, { safeSquares: false }) }).v, 4);
+  // 500 bot games finish and never put two tokens on one square
+  const rnd = rng(5150);
+  for (let g = 0; g < 500; g++) {
+    let st = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules: Object.assign({ mustEnter: g % 2 === 0 }, rules) });
+    let steps = 0;
+    while (!st.over) {
+      const r = 1 + Math.floor(rnd() * 6); st = R.apply(st, { r, t: AI.choose(st, r, st.seats[st.turn].level, rnd) }).state;
+      const cells = [];
+      for (let c = 0; c < 4; c++) for (const q of st.tokens[c]) if (q >= 0 && q <= R.LAST_TRACK) cells.push(R.trackIndex(c, q));
+      assert.strictEqual(new Set(cells).size, cells.length, 'two tokens on one square');
+      if (++steps > 8000) throw new Error('no end');
+    }
+  }
 });
 
 console.log((process.exitCode ? 'FAILED' : 'OK') + ' – ' + passed + ' tests passed');

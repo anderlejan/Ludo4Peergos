@@ -42,6 +42,10 @@ tools/make_release.py   builds releases/Ludo4Peergos-v<ver>.zip + source zip, ch
 - `protectOwn` (0.4.0, not a visible option – Settings set it for every new game): with `onePerSquare`, a move may not
   land on an own token (track or home column), except the forced entry of `mustEnter`. Games without the key (0.3.0)
   keep kicking own tokens.
+- `safeBlock` (0.5.0, hidden like `protectOwn`, set for every new game): safe squares also work with `onePerSquare` –
+  a token on a safe square cannot be captured, so a move onto a safe square holding an opponent is not legal, except a
+  token entering on its own start square (it captures). Without the key (older games) `onePerSquare` ignores safe squares.
+- Settings are the one source of rules and speed for new games: the New game dialog starts from them and saves back.
 - Legacy option `selfKick` (0.2.0, own tokens only, safe squares still protect) stays in the engine so old games replay
   the same way; Settings turn a saved `selfKick` into `onePerSquare`.
 - Rules and speed belong to the game (`setup.rules`, `setup.speed`) and never change while it runs; Settings only
@@ -82,7 +86,8 @@ ignores protocol-2 messages and asks its user to update. Protocol 3 (app 0.3.0) 
 `onePerSquare`; 0.2.0 apps ignore protocol-3 messages and ask to update. Each message carries the lowest protocol
 that understands it (`setup` and `leave` = 3, everything else = 2), so a 0.3.0 player can still play in a game a
 0.2.0 host started (only a `leave` is not seen by that host). Protocol 4 (app 0.4.0): a setup is stamped 4 only when its
-rules use `mustEnter` or `onePerSquare`+`protectOwn` (a 0.3.0 app would replay those differently).
+rules use `mustEnter` or `onePerSquare`+`protectOwn` (a 0.3.0 app would replay those differently). Protocol 5 (app 0.5.0):
+a setup with `onePerSquare` + `safeSquares` + `safeBlock`.
 
 Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns.
 

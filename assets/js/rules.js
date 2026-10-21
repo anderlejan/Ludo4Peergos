@@ -63,6 +63,9 @@
     mustEnter: false,        // 0.4.0: a 6 must bring a token out of the yard while one is there (even onto an own token)
     protectOwn: false,       // 0.4.0: with onePerSquare, a move may not land on an own token (only a forced entry does);
                              // not a visible option – every game started by 0.4.0+ sets it, older games stay without it
+    safeBlock: false,        // 0.5.0: safe squares also work with onePerSquare – a token there cannot be captured, so no
+                             // other token may land there (except a token entering on its own start square, which
+                             // sends the opponent home). Hidden like protectOwn; games before 0.5.0 stay without it.
   });
 
   function normalizeRules(r) {
@@ -128,7 +131,13 @@
   const trackIndex = (color, rel) => (START[color] + rel) % TRACK_LEN;
   const isSafeCell = idx => SAFE.indexOf(idx) >= 0;
   /** True when a token on track cell `idx` cannot be captured under these rules. */
-  const protects = (rules, idx) => !!(rules && rules.safeSquares && !rules.onePerSquare && isSafeCell(idx));
+  const protects = (rules, idx) => {
+    if (!rules || !rules.safeSquares || !isSafeCell(idx)) return false;
+    return !rules.onePerSquare || !!rules.safeBlock; // before 0.5.0, one token per square switched safe squares off
+  };
+  /** One token per square + safe squares (0.5.0): an opponent on a safe square blocks it – except for a token entering
+   *  on its own start square (rel 0), which captures it. */
+  const safeBlocks = (rules, rel) => !!(rules.onePerSquare && rules.safeBlock && rules.safeSquares && rel > 0 && rel <= LAST_TRACK);
 
   /** Grid position [col,row] of a token of `color` at relative position `rel` (token index for yard/centre spots). */
   function cellOf(color, rel, tokenIndex) {
@@ -159,10 +168,11 @@
     }
     const canEnter = roll === 6 || (r.enterOn === 'oneOrSix' && roll === 1);
     const ownBlocks = to => r.onePerSquare && r.protectOwn && to < FINISH && mine.some(q => q === to);
+    const oppBlocks = to => safeBlocks(r, to) && isSafeCell(trackIndex(c, to)) && capturesAtIgnoringSafety(state, c, to);
     for (let i = 0; i < 4; i++) {
       const p = mine[i];
       if (p === -1) { if (canEnter && !ownBlocks(0)) out.push(i); }
-      else if (p < FINISH && p + roll <= FINISH && !ownBlocks(p + roll)) out.push(i);
+      else if (p < FINISH && p + roll <= FINISH && !ownBlocks(p + roll) && !oppBlocks(p + roll)) out.push(i);
     }
     return out;
   }
@@ -176,11 +186,21 @@
     return { from: p, to: p + roll, path };
   }
 
+  /** Is any opponent token on the track square of `color`'s relative position `rel` (safe squares not considered)? */
+  function capturesAtIgnoringSafety(state, color, rel) {
+    const cell = trackIndex(color, rel);
+    for (let oc = 0; oc < 4; oc++) {
+      if (oc === color || !state.seats[oc]) continue;
+      for (const q of state.tokens[oc]) if (q >= 0 && q <= LAST_TRACK && trackIndex(oc, q) === cell) return true;
+    }
+    return false;
+  }
+
   /** Opponent tokens that would be captured if a token of `color` lands on relative position `rel`. */
   function capturesAt(state, color, rel) {
     if (rel < 0 || rel > LAST_TRACK) return [];
     const cell = trackIndex(color, rel);
-    if (protects(state.rules, cell)) return [];
+    if (protects(state.rules, cell) && !(state.rules.onePerSquare && state.rules.safeBlock && rel === 0)) return [];
     const hits = [];
     for (let oc = 0; oc < 4; oc++) {
       if (oc === color || !state.seats[oc]) continue;
