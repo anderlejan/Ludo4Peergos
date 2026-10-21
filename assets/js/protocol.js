@@ -5,8 +5,9 @@
   const R = (root.L4P && root.L4P.Rules) || (typeof require !== 'undefined' ? require('./rules.js') : null);
 
   const PREFIX = 'L4P1 ';
-  const PROTOCOL = 3; // 2 (app 0.2.0): speed, round, restartAsk/restartVote, rule selfKick
+  const PROTOCOL = 4; // 2 (app 0.2.0): speed, round, restartAsk/restartVote, rule selfKick
                      // 3 (app 0.3.0): leave, rule onePerSquare
+                     // 4 (app 0.4.0): rules mustEnter and protectOwn (only setups that use them are stamped 4)
 
   function b64urlEncode(str) {
     const bytes = new TextEncoder().encode(str);
@@ -52,8 +53,14 @@
   // Each message carries the lowest protocol that understands it, so a 0.3.0 player can still play in a game an older
   // app started (moves, chat, new-round votes are protocol 2). New games (setup) and `leave` need protocol 3.
   const NEEDS = { setup: 3, leave: 3 };
+  /** A setup needs protocol 4 only when its rules use something a 0.3.0 app does not know (it would replay differently). */
+  function setupNeeds(rules) {
+    const r = rules || {};
+    return r.mustEnter || (r.onePerSquare && r.protectOwn) ? 4 : 3;
+  }
   function msg(kind, fields, appVersion) {
-    return Object.assign({ v: NEEDS[kind] || 2, a: appVersion || '', k: kind, id: randomId(10) }, fields);
+    const v = kind === 'setup' ? setupNeeds(fields && fields.rules) : (NEEDS[kind] || 2);
+    return Object.assign({ v, a: appVersion || '', k: kind, id: randomId(10) }, fields);
   }
 
   /**

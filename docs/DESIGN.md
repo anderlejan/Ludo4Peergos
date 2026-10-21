@@ -37,6 +37,11 @@ tools/make_release.py   builds releases/Ludo4Peergos-v<ver>.zip + source zip, ch
 - Option `onePerSquare` (off by default, 0.3.0): one token per square for every token – landing on any token, own or
   opponent's, sends it to its yard; safe squares do not protect then (`Rules.protects`). An opponent hit counts as a
   capture (bonus roll), an own token does not. Opponents' home columns are never reached.
+- Option `mustEnter` (off by default, 0.4.0): with a 6, while a token is in the yard, the only legal moves are the
+  yard tokens (an own token on the start square goes back under `onePerSquare`).
+- `protectOwn` (0.4.0, not a visible option – Settings set it for every new game): with `onePerSquare`, a move may not
+  land on an own token (track or home column), except the forced entry of `mustEnter`. Games without the key (0.3.0)
+  keep kicking own tokens.
 - Legacy option `selfKick` (0.2.0, own tokens only, safe squares still protect) stays in the engine so old games replay
   the same way; Settings turn a saved `selfKick` into `onePerSquare`.
 - Rules and speed belong to the game (`setup.rules`, `setup.speed`) and never change while it runs; Settings only
@@ -76,7 +81,8 @@ Protocol version 2 (app 0.2.0) added `speed`, `round`, `ask`, the restart messag
 ignores protocol-2 messages and asks its user to update. Protocol 3 (app 0.3.0) added `leave` and the rule
 `onePerSquare`; 0.2.0 apps ignore protocol-3 messages and ask to update. Each message carries the lowest protocol
 that understands it (`setup` and `leave` = 3, everything else = 2), so a 0.3.0 player can still play in a game a
-0.2.0 host started (only a `leave` is not seen by that host).
+0.2.0 host started (only a `leave` is not seen by that host). Protocol 4 (app 0.4.0): a setup is stamped 4 only when its
+rules use `mustEnter` or `onePerSquare`+`protectOwn` (a 0.3.0 app would replay those differently).
 
 Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns.
 
@@ -97,9 +103,12 @@ Who runs the computer players online: the host's app. If the host is offline, th
   members' message logs, so new moves arrive by polling.
 - The chat list: `GET /peergos-api/v1/chat/` (with members) leaves out chats whose recent-message list is empty;
   `GET /peergos-api/v0/chat/` lists every chat of the app. The app asks both and shows the union, plus remembered games.
-- Every Peergos API call (chat and data folder) goes through one queue, `Storage.api` (one request at a time, body
-  read inside the step) – a safeguard: chat reads merge other members' logs into the user's tree. The red Peergos
-  toast "CAS exception updating cryptree node" seen in tests came from Peergos' News feed refresh with no app running
-  (`tests/peergos/probe_cas_game.py`: 0 errors from the app in 6 close/reopen cycles during a live game).
+- Peergos calls (`Storage.api`): chat calls run one at a time in the 'chat' queue, data-folder writes in the 'data'
+  queue, data reads directly; every call has a time limit (30 s; chat list 12 s; the friend-picker POST none, it waits
+  for the user). Peergos can leave a request unanswered for good – its v1 chat list has no error path when one chat
+  fails to load (`buildLatestMessageMap` in AppSandbox.vue, 1.38 and 1.39) – and in 0.3.0 such a call blocked the one
+  shared queue, so the Notes window never opened. `tests/mock_peergos.py` `POST /mock/hang` reproduces it.
+  The red Peergos toast "CAS exception updating cryptree node" seen in tests came from Peergos' News feed refresh with
+  no app running (`tests/peergos/probe_cas_game.py`).
 - Each member's log is append-only and keeps every author's own order, but messages of different authors can
   be merged in a different order on each device – hence the order-independent protocol above.

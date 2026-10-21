@@ -48,6 +48,7 @@
   function settingsRules(r) {
     const n = R.normalizeRules(r);
     if (n.selfKick) { n.selfKick = false; n.onePerSquare = true; }
+    n.protectOwn = true; // 0.4.0: own tokens are protected in every new game (see Rules.legalMoves)
     return n;
   }
   let settings = Object.assign({}, DEFAULTS, S.lsGet('settings', {}));
@@ -200,7 +201,8 @@
   /** Short text of the rules that differ from the standard ones, and the full list for a tooltip. */
   function rulesShort(rules) {
     const r = R.normalizeRules(rules), d = R.DEFAULT_RULES, diff = [];
-    const keys = Object.keys(d).filter(k => k !== 'selfKick' || r.selfKick); // selfKick only shows in old (0.2.0) games
+    // selfKick only shows in old (0.2.0) games; protectOwn is part of "one token per square" since 0.4.0, not an option
+    const keys = Object.keys(d).filter(k => (k !== 'selfKick' || r.selfKick) && k !== 'protectOwn');
     for (const k of keys) if (r[k] !== d[k] && !(k === 'safeSquares' && r.onePerSquare)) diff.push(t('short.' + k));
     const full = keys.map(k => {
       if (k === 'enterOn') return t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
@@ -228,6 +230,7 @@
   }
 
   // ───────────────────────────── app shell ─────────────────────────────
+  const bannerLog = []; // the turn banners shown (texts, whose turn) – read by the tests
   let screen = 'home';
   let notesUI = null;
   let game = null; // current session
@@ -490,10 +493,11 @@
       const one = !!rules.onePerSquare;
       box.replaceChildren(
         row('enterOn', choice('enterOn', ['six', 'oneOrSix'])),
+        row('mustEnter', toggle('mustEnter')),
         row('threeTries', toggle('threeTries')),
         row('sixBonus', toggle('sixBonus')), row('threeSixes', toggle('threeSixes')),
         row('captureBonus', toggle('captureBonus')), row('finishBonus', toggle('finishBonus')),
-        row('onePerSquare', toggle('onePerSquare')),
+        row('onePerSquare', toggle('onePerSquare'), readOnly && one && !rules.protectOwn ? t('rule.onePerOld') : null),
         row('safeSquares', toggle('safeSquares', one), one ? t('rule.safeOff') : null),
         rules.selfKick ? row('selfKick', toggle('selfKick', true)) : null,
         row('endMode', choice('endMode', ['first', 'all'])));
@@ -608,13 +612,15 @@
     li.push(t(r.sixBonus ? 'help.sixBonus.on' : 'help.sixBonus.off'));
     if (r.sixBonus) li.push(t(r.threeSixes ? 'help.threeSixes.on' : 'help.threeSixes.off'));
     li.push(t('help.capture') + t(r.captureBonus ? 'help.capture.bonus' : 'help.capture.noBonus'));
-    if (r.onePerSquare) li.push(t('help.onePer.on'));
+    if (r.onePerSquare && r.protectOwn) li.push(t('help.onePer.protect') + (r.mustEnter ? ' ' + t('help.onePer.protectExcept') : ''));
+    else if (r.onePerSquare) li.push(t('help.onePer.on'));
     else {
       li.push(t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
       li.push(t(r.selfKick ? 'help.selfKick.on' : 'help.onePer.off'));
     }
     li.push(t(r.finishBonus ? 'help.finishBonus.on' : 'help.finishBonus.off') + ' ' + t('help.exact'));
     li.push(t(r.threeTries ? 'help.threeTries.on' : 'help.threeTries.off', { enter }));
+    if (r.mustEnter) li.push(t('help.mustEnter.on'));
     li.push(t(r.endMode === 'all' ? 'help.end.all' : 'help.end.first'));
     return '<p>' + t('help.intro', { enter }) + '</p><ul class="help-rules">' + li.map(x => '<li>' + x + '</li>').join('') + '</ul>';
   }
@@ -629,8 +635,18 @@
   }
 
   // ───────────────────────────── User notes ─────────────────────────────
-  function openNotes() {
-    if (!root.UserNotesUI) return;
+  async function openNotes() {
+    if (!root.UserNotesUI) { toast(t('notes.unavailable'), 'bad', 6000); return; }
+    if (notesUI && notesUI.isOpen()) return;
+    if (notesOpening) return;
+    notesOpening = true;
+    const slow = setTimeout(() => toast(t('notes.opening'), 'info', 2500), 400);
+    try { await openNotesNow(); }
+    catch (e) { console.error('notes', e); toast(t('notes.failed') + ' ' + (e && e.message ? e.message : e), 'bad', 8000); }
+    finally { clearTimeout(slow); notesOpening = false; }
+  }
+  let notesOpening = false;
+  async function openNotesNow() {
     if (!notesUI) {
       const notesDoc = S.Doc('user-notes.json', 250);
       notesUI = root.UserNotesUI.create({
@@ -639,7 +655,11 @@
         api: {
           get: async () => {
             let data = S.lsGet('userNotes', null);
-            if (S.PEERGOS) { try { const r = await S.getJSON('user-notes.json'); if (r) data = r; } catch (e) { console.warn(e); } }
+            // the data folder copy is the truth; if Peergos does not answer within 8 s, open with this device's copy
+            if (S.PEERGOS) {
+              try { const r = await S.getJSON('user-notes.json', { timeout: 8000 }); if (r) data = r; }
+              catch (e) { console.warn(e); toast(t('notes.localCopy'), 'warn', 6000); }
+            }
             return root.UserNotesCore.migrate(data || { notes: [] }).notes;
           },
           save: async list => { const data = { version: 2, notes: list }; S.lsSet('userNotes', data); notesDoc.set(data); },
@@ -672,7 +692,7 @@
         }),
       });
     }
-    notesUI.open();
+    await notesUI.open();
   }
 
   // ───────────────────────────── game session ─────────────────────────────
@@ -926,6 +946,8 @@
 
     // ── turn banner: who plays now, shown on the board before the turn starts
     async function showBanner(c, text, ms) {
+      bannerLog.push({ c, text, mine: isMine(self.state && self.state.seats[c]) && controlOf(self.state, c) === 'me' });
+      if (bannerLog.length > 400) bannerLog.shift();
       if (!ms) return;
       banner.style.setProperty('--c', 'var(--p' + c + ')');
       banner.replaceChildren(h('span', { class: 'tb-token' }), h('span', { class: 'tb-text' }, text));
@@ -934,7 +956,11 @@
       banner.classList.remove('show');
     }
     function bannerText(c, changed) {
-      if (!changed) return t('game.again');
+      if (!changed) {
+        // "Roll again" speaks to you – when the computer or another player goes on, say who it is
+        const mineNow = isMine(self.state.seats[c]) && controlOf(self.state, c) === 'me';
+        return mineNow ? t('game.again') : t('game.againOther', { name: nameOf(c) });
+      }
       const seat = self.state.seats[c];
       if (isMine(seat) && controlOf(self.state, c) === 'me') return t('game.yourTurnBanner');
       return t('game.turnBanner', { name: nameOf(c) });
@@ -1453,6 +1479,6 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden && screen === 'home' && Net.available) loadOnlineList(); });
   }
 
-  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame };
+  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame, bannerLog };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })(window);

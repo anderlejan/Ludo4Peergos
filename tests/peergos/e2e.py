@@ -20,7 +20,7 @@ from playwright.sync_api import sync_playwright
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--url', default='http://localhost:8777')
-ap.add_argument('--zip', required=True)
+ap.add_argument('--zip', required=True, help='name of the ZIP (or, for Peergos 1.38, of an unpacked app folder) in /<user>/apps/')
 ap.add_argument('--users', nargs=2, default=['alice', 'bob'])
 ap.add_argument('--password', default='testpassword')
 ap.add_argument('--shots')
@@ -96,7 +96,8 @@ def install_from_zip(page, user, zipname=None):
     wait(lambda: page.evaluate("window.__drive.currentDir && !window.__drive.showSpinner"), 'drive listing', 180)
     path = '/%s/apps/%s' % (user, os.path.basename(zipname or A.zip))
     page.evaluate("p => window.__drive.changePath(p)", path)
-    wait(lambda: page.evaluate("!!window.__drive.archive && !window.__drive.showSpinner && window.__drive.files.some(f => f.getName() === 'peergos-app.json')"), 'the archive listing', 180)
+    # a ZIP (Peergos 1.39+ installs from inside an archive) or an unpacked app folder (1.38 offers Install App only there)
+    wait(lambda: page.evaluate("!window.__drive.showSpinner && window.__drive.files.some(f => f.getName() === 'peergos-app.json')"), 'the app listing', 180)
     shot(page, 'install-1-archive-' + user)
 
     def open_menu():
@@ -185,6 +186,10 @@ def main():
             ok('requestFullscreen is refused inside the sandbox', True)
             print('    (refusal: %s)' % str(e).splitlines()[0][:160], flush=True)
         shot(a, 'app-1-home')
+        fa.click('#btn-notes')
+        wait(lambda: fa.evaluate("!!document.querySelector('.un-overlay')"), 'the Notes window', 20)
+        ok('the Notes window opens in the real sandbox', True)
+        fa.evaluate("document.querySelector('.un-overlay .un-close').click()")
 
         print('3. settings saved to the data folder and restored', flush=True)
         fa.evaluate("L4P.App.set({theme: 'aurora', anim: 'fast'})")

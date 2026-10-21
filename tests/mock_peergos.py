@@ -13,7 +13,8 @@ It serves assets/ and implements the parts of /peergos-api the app uses:
   /peergos-api/v1/chat/<id>     GET ?startIndex=
   /peergos-api/v0/print/        POST (accepted, ignored)
 Test hooks: GET /mock/state (JSON dump), POST /mock/invite-order {"order": ["bob", ...]},
-POST /mock/join {"chat", "user"}, POST /mock/hide-list {"user", "v0": bool, "v1": bool} (leave chats out of a list).
+POST /mock/join {"chat", "user"}, POST /mock/hide-list {"user", "v0": bool, "v1": bool} (leave chats out of a list),
+POST /mock/hang {"user", "paths": [prefix, ...]} (never answer those GET requests).
 """
 import json, sys, threading, time, uuid, os, io
 from email.parser import BytesParser
@@ -21,13 +22,14 @@ from email.policy import default as email_default
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
+ROOT = os.environ.get('MOCK_ROOT') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
 LOCK = threading.Lock()
 DATA = {}      # user -> {path: bytes}
 CHATS = {}     # id -> {owner, title, members:[...], joined:set, messages:[...]}
 USERS = []
 INVITE_ORDER = []
 HIDE = {}      # user -> {'v0': bool, 'v1': bool}: pretend Peergos leaves the chats out of that list
+HANG = {}      # user -> [path prefixes]: pretend Peergos never answers these requests (as its chat list can)
 LATENCY = float(os.environ.get('MOCK_LATENCY', '0.05'))
 MIME = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.woff2': 'font/woff2', '.json': 'application/json', '.txt': 'text/plain', '.md': 'text/markdown', '.svg': 'image/svg+xml'}
 
@@ -79,6 +81,9 @@ def make_handler(user):
             p = unquote(u.path)
             q = parse_qs(u.query)
             time.sleep(LATENCY)
+            if any(p.startswith(x) for x in HANG.get(user, [])):
+                time.sleep(3600)
+                return
             if p == '/mock/state':
                 with LOCK:
                     return self.send(200, json.dumps({'chats': {k: dict(v, joined=list(v['joined'])) for k, v in CHATS.items()},
@@ -153,6 +158,10 @@ def make_handler(user):
             time.sleep(LATENCY)
             if p == '/mock/invite-order':
                 INVITE_ORDER[:] = json.loads(raw or b'{}').get('order', [])
+                return self.send(200)
+            if p == '/mock/hang':
+                req = json.loads(raw or b'{}')
+                HANG[req['user']] = req.get('paths', [])
                 return self.send(200)
             if p == '/mock/hide-list':
                 req = json.loads(raw or b'{}')

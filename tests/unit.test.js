@@ -433,4 +433,75 @@ test('protocol: messages carry the lowest protocol that understands them', () =>
   assert.ok(P.PROTOCOL >= 3);
 });
 
+test('rule mustEnter: a 6 must bring a token out while one is in the yard', () => {
+  const s = R.newGame(Object.assign(four(), { rules: { mustEnter: true } }));
+  s.tokens[0] = [10, 20, -1, -1];
+  assert.deepStrictEqual(R.legalMoves(s, 6), [2, 3], 'only the yard tokens');
+  assert.deepStrictEqual(R.legalMoves(s, 3), [0, 1], 'other rolls as usual');
+  s.tokens[0] = [10, 20, 30, 56];
+  assert.deepStrictEqual(R.legalMoves(s, 6), [0, 1, 2], 'nobody in the yard: any move');
+  // without the rule a 6 may move any token
+  const s2 = R.newGame(four()); s2.tokens[0] = [10, 20, -1, -1];
+  assert.deepStrictEqual(R.legalMoves(s2, 6), [0, 1, 2, 3]);
+  // the third six still forfeits
+  const s3 = R.newGame(Object.assign(four(), { rules: { mustEnter: true } })); s3.tokens[0] = [10, -1, -1, -1]; s3.sixes = 2;
+  assert.deepStrictEqual(R.legalMoves(s3, 6), []);
+});
+
+test('rule protectOwn (with onePerSquare): own tokens cannot be landed on, except a forced entry with mustEnter', () => {
+  const rules = { onePerSquare: true, protectOwn: true };
+  const s = R.newGame(Object.assign(four(), { rules }));
+  s.tokens[0] = [5, 8, 20, -1];
+  assert.deepStrictEqual(R.legalMoves(s, 3), [1, 2], 'token 0 would land on token 1 – not allowed');
+  s.tokens[0] = [0, 30, -1, -1];
+  assert.deepStrictEqual(R.legalMoves(s, 6), [0, 1], 'entering onto the own token on the start square is not allowed');
+  s.tokens[0] = [5, 8, 56, 56];
+  assert.deepStrictEqual(R.legalMoves(s, 3), [1], 'the only other move');
+  s.tokens[0] = [5, 8, 56, 56]; s.tokens[0][1] = 8;
+  const blocked = R.newGame(Object.assign(four(), { rules })); blocked.tokens[0] = [50, 53, 56, 56];
+  assert.deepStrictEqual(R.legalMoves(blocked, 3), [1], 'home column too');
+  // opponents are still captured, also on a star
+  const c = R.newGame(Object.assign(four(), { rules })); c.tokens[0] = [5, -1, -1, -1]; c.tokens[2] = [34, -1, -1, -1];
+  assert.strictEqual(R.apply(c, { r: 3, t: 0 }).state.tokens[2][0], -1);
+  // forced entry with mustEnter sends the own token on the start square back (the user's special case)
+  const f = R.newGame(Object.assign(four(), { rules: { onePerSquare: true, protectOwn: true, mustEnter: true } }));
+  f.tokens[0] = [0, 30, -1, 56];
+  assert.deepStrictEqual(R.legalMoves(f, 6), [2], 'must enter');
+  const res = R.apply(f, { r: 6, t: 2 });
+  assert.deepStrictEqual(res.state.tokens[0], [-1, 30, 0, 56]);
+  assert.ok(res.events.some(e => e.type === 'selfCapture' && e.token === 0));
+  // games of 0.3.0 (no protectOwn) keep their rule: own tokens are kicked
+  const old = R.newGame(Object.assign(four(), { rules: { onePerSquare: true } })); old.tokens[0] = [5, 8, -1, -1];
+  assert.deepStrictEqual(R.legalMoves(old, 3), [0, 1]);
+  assert.deepStrictEqual(R.apply(old, { r: 3, t: 0 }).state.tokens[0], [8, -1, -1, -1]);
+});
+
+test('new rules: 500 bot games each finish, own tokens never share or get kicked', () => {
+  const rnd = rng(9090);
+  for (const rules of [{ mustEnter: true }, { onePerSquare: true, protectOwn: true }, { onePerSquare: true, protectOwn: true, mustEnter: true }]) {
+    for (let g = 0; g < 500; g++) {
+      let s = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules });
+      let steps = 0;
+      while (!s.over) {
+        const r = 1 + Math.floor(rnd() * 6), t = AI.choose(s, r, s.seats[s.turn].level, rnd);
+        const res = R.apply(s, { r, t });
+        if (rules.protectOwn && !(rules.mustEnter && r === 6)) assert.ok(!res.events.some(e => e.type === 'selfCapture'), 'own token kicked');
+        s = res.state;
+        if (++steps > 8000) throw new Error('no end ' + JSON.stringify(rules));
+      }
+    }
+  }
+});
+
+test('protocol: setups that use the 0.4.0 rules need protocol 4, others stay at 3', () => {
+  assert.strictEqual(P.msg('setup', { rules: { mustEnter: true } }).v, 4);
+  assert.strictEqual(P.msg('setup', { rules: { onePerSquare: true, protectOwn: true } }).v, 4);
+  assert.strictEqual(P.msg('setup', { rules: { protectOwn: true } }).v, 3, 'protectOwn alone changes nothing');
+  assert.strictEqual(P.msg('setup', { rules: {} }).v, 3);
+  assert.strictEqual(P.PROTOCOL, 4);
+  // a 0.3.0 app (protocol 3) would count a protocol-4 setup as unknown instead of replaying it wrongly
+  const m = P.msg('setup', { g: 'X', seats: [{ kind: 'human', user: 'a' }, { kind: 'bot' }, null, null], rules: { mustEnter: true } });
+  assert.ok(m.v > 3);
+});
+
 console.log((process.exitCode ? 'FAILED' : 'OK') + ' – ' + passed + ' tests passed');

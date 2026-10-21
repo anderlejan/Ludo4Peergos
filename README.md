@@ -11,7 +11,8 @@ and running entirely inside your own Peergos space.
 - 12 colour themes (10 dark, 2 light) or "Follow Peergos", glossy or flat tokens, four game speeds, a banner and a
   glowing yard that show whose turn it is.
 - House rules: leave the yard with a 6 or 1/6, bonus rolls for sixes, captures and reaching home, third six ends the
-  turn, safe squares, three tries, one token per square, play on for all places. Each game keeps its own rules and
+  turn, safe squares, three tries, a 6 must bring a token out, one token per square (your own tokens protected), play
+  on for all places. Each game keeps its own rules and
   speed; *How to play* shows the rules of the game you are in.
 - **New round** with the same players, rules and speed, without leaving the game; wins are counted across rounds.
 - The main menu shows how every game was set up (players, your colour, speed, rules in short, round).

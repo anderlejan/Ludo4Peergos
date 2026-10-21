@@ -131,14 +131,14 @@ def main():
             ok('changing settings does not change the running game', pg.evaluate('L4P.App.game.speedId') == 'fast' and pg.evaluate('L4P.App.game.currentRules().onePerSquare') is True)
             pg.click('#btn-settings')
             pg.click('.set-tab[data-sec="rules"]')
-            ok('rules shown read-only during the game', pg.locator('.set-pane .rules.read-only input:disabled').count() == 7 and pg.locator('.set-pane .rules.read-only .seg-btn:disabled').count() == 4 and pg.locator('.lock-note').count() == 1)
+            ok('rules shown read-only during the game', pg.locator('.set-pane .rules.read-only input:disabled').count() == 8 and pg.locator('.set-pane .rules.read-only .seg-btn:disabled').count() == 4 and pg.locator('.lock-note').count() == 1)
             pg.click('.set-tab[data-sec="look"]')
             ok('speed locked during the game', pg.locator('#field-speed .seg-btn:disabled').count() == 4)
             ok('no full-screen button or setting any more', pg.locator('#btn-full').count() == 0 and 'full screen' not in pg.inner_text('.set-pane').lower())
             pg.keyboard.press('Escape')
             pg.click('#btn-game-rules')
             txt = pg.inner_text('.dlg-help')
-            ok('How to play shows this game\'s rules (one token per square for everybody)', 'Rules of this game' in txt and 'One token per square – for everybody' in txt and 'safe' not in txt.split('for everybody')[0][-40:] and 'Speed: Fast' in txt, txt[:300])
+            ok('How to play shows this game\'s rules (one token per square, own tokens protected)', 'Rules of this game' in txt and 'One token per square:' in txt and 'Your own tokens are protected' in txt and 'no safe squares' in txt and 'Speed: Fast' in txt, txt[:300])
             if SHOTS:
                 pg.screenshot(path=os.path.join(SHOTS, 'help-game.png'))
             pg.keyboard.press('Escape')
@@ -331,6 +331,48 @@ def main():
             if SHOTS:
                 c.screenshot(path=os.path.join(SHOTS, 'notes.png'))
             ok('no script errors (themes/notes)', not c.errors, '; '.join(c.errors[:3]))
+            c.context.close()
+
+            print('4b. "Roll again" only on your own turn – English and Czech')
+            for lang, mine_text, other in (('en', 'Roll again', 'rolls again'), ('cs', 'Házíš znovu', 'hází znovu')):
+                c = new_page(browser, 'carol')
+                c.evaluate("l => L4P.App.set({anim: 'instant', sound: false, autoRoll: true, autoMove: true, lang: l, confirmLeave: false})", lang)
+                c.evaluate("L4P.App.bannerLog.length = 0")
+                c.click('#act-quick')
+                c.wait_for_function('L4P.App.game && L4P.App.game.state')
+                play_until_over([c], timeout=120)
+                log = c.evaluate('L4P.App.bannerLog')
+                wrong = [b for b in log if b['text'] == mine_text and not b['mine']]
+                ok('%s: "%s" never shown on another player\'s turn (%d banners)' % (lang, mine_text, len(log)), not wrong and len(log) > 20, json.dumps(wrong[:3], ensure_ascii=False))
+                ok('%s: others rolling again are named ("… %s")' % (lang, other), any(other in b['text'] and not b['mine'] for b in log))
+                ok('%s: your own extra roll says "%s"' % (lang, mine_text), any(b['text'] == mine_text and b['mine'] for b in log))
+                c.evaluate("L4P.App.set({lang: 'auto'})")
+                c.context.close()
+
+            print('5. Peergos never answers the chat list (as it can): Notes still opens, the app keeps working')
+            post('/mock/hang', {'user': 'carol', 'paths': ['/peergos-api/v1/chat']})
+            c = new_page(browser, 'carol')
+            c.evaluate('L4P.App.set({anim: "instant", sound: false})')
+            time.sleep(1.0)
+            t0 = time.time()
+            c.click('#btn-notes')
+            opened = False
+            while time.time() - t0 < 12 and not opened:
+                opened = c.locator('.un-overlay').count() > 0
+                time.sleep(0.1)
+            ok('Notes opens while a Peergos call hangs (%.1f s)' % (time.time() - t0), opened)
+            if SHOTS:
+                c.screenshot(path=os.path.join(SHOTS, 'notes-while-hanging.png'))
+            c.keyboard.press('Escape')
+            c.evaluate("L4P.App.set({theme: 'forest'})")
+            time.sleep(1.0)
+            ok('settings are still saved while the chat list hangs', json.loads(mock_state()['data']['carol']['settings.json'])['theme'] == 'forest')
+            end = time.time() + 20
+            while time.time() < end and 'Looking for online games' in c.inner_text('#games-list'):
+                time.sleep(0.5)
+            ok('the game list gives up on the unanswered list after its time limit', 'Looking for online games' not in c.inner_text('#games-list'), c.inner_text('#games-list')[:200])
+            post('/mock/hang', {'user': 'carol', 'paths': []})
+            ok('no script errors (hanging Peergos call)', not [e for e in c.errors if 'did not answer' not in e], '; '.join(c.errors[:3]))
             c.context.close()
             browser.close()
     finally:

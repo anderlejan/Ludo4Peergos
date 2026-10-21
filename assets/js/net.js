@@ -14,7 +14,7 @@
     const fd = new FormData();
     fd.append('title', title);
     fd.append('maxInvites', String(Math.max(1, Math.min(3, maxInvites | 0))));
-    const r = await call(V0, { method: 'POST', body: fd });
+    const r = await S.api(V0, { method: 'POST', body: fd }, { timeout: 0 }); // waits for the user in Peergos' friend picker
     if (r.status !== 201) return null;
     const id = r.location;
     return id && id.trim() ? id.trim() : null;
@@ -33,7 +33,7 @@
     const byId = new Map();
     let ok = 0, lastErr = null;
     try {
-      const r = await call(V1, { method: 'GET', cache: 'no-store' });
+      const r = await S.api(V1, { method: 'GET', cache: 'no-store' }, { timeout: 12000 }); // can hang in Peergos, see storage.js
       if (!r.ok) throw new Error('chat list v1 → ' + r.status);
       const j = JSON.parse(r.text || '{}');
       const chats = j.chats || [], latest = j.latestMessages || [];

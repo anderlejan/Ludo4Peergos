@@ -11,24 +11,38 @@
   function lsSet(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch (e) { /* private mode */ } }
   function lsDel(k) { try { localStorage.removeItem(LS + k); } catch (e) { /* ignore */ } }
 
-  // ONE queue for every Peergos API call of this app (data folder AND chat, see net.js): Peergos changes the user's
-  // encrypted tree for each of them, and overlapping calls can fail with "CAS exception updating cryptree node"
-  // (seen with Peergos 1.39 when chat reads/sends and data writes overlapped). The body is read inside the queued step.
-  let chain = Promise.resolve();
-  function api(path, init) {
-    const step = async () => {
+  /** One request; the whole body is read. Rejects after `ms` (0 = no limit) – Peergos can leave a request unanswered
+   *  for good (e.g. its chat list when one chat fails to load: no error path in AppSandbox.vue). */
+  function request(path, init, ms) {
+    const go = (async () => {
       const r = await fetch(path, init);
       const text = await r.text();
       return { ok: r.ok, status: r.status, text, location: r.headers.get('location') };
-    };
-    const run = chain.then(step, step);
-    chain = run.catch(() => {});
+    })();
+    if (!ms) return go;
+    let timer;
+    const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Peergos did not answer: ' + path)), ms); });
+    return Promise.race([go, limit]).finally(() => clearTimeout(timer));
+  }
+
+  // Queues: calls of one kind run one at a time – 'chat' (every chat call, see net.js) and 'data' (writes to the app's
+  // data folder). 0.4.0: two separate queues and a time limit on every call. In 0.3.0 one shared queue without a limit
+  // let a single call that Peergos never answered (its chat list can do that) stop everything behind it – e.g. the
+  // Notes window, which waits for its data file. Reads of the app's own data files do not queue at all.
+  const chains = {};
+  const TIMEOUT = 30000;
+  function api(path, init, opts) {
+    const ms = opts && opts.timeout != null ? opts.timeout : TIMEOUT;
+    const q = (opts && opts.queue) || 'chat';
+    const step = () => request(path, init, ms);
+    const run = (chains[q] || Promise.resolve()).then(step, step);
+    chains[q] = run.catch(() => {});
     return run;
   }
 
-  async function getJSON(path) {
+  async function getJSON(path, opts) {
     if (!PEERGOS) return undefined;
-    const r = await api(DATA + path, { method: 'GET', cache: 'no-store' });
+    const r = await request(DATA + path, { method: 'GET', cache: 'no-store' }, (opts && opts.timeout) || TIMEOUT);
     if (r.status === 404) return null;
     if (!r.ok) throw new Error('GET ' + path + ' → ' + r.status);
     const text = r.text;
@@ -38,7 +52,7 @@
 
   async function putText(path, text) {
     if (!PEERGOS) return false;
-    const r = await api(DATA + path, { method: 'PUT', body: new TextEncoder().encode(text) });
+    const r = await api(DATA + path, { method: 'PUT', body: new TextEncoder().encode(text) }, { queue: 'data' });
     if (!(r.status === 200 || r.status === 201 || r.status === 204)) throw new Error('PUT ' + path + ' → ' + r.status);
     return true;
   }

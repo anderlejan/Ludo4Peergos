@@ -3,7 +3,7 @@
     "displayName": "Ludo4Peergos",
     "name": "ludo4peergos",
     "description": "Ludo – play against the computer or with your Peergos friends",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "author": "anderlejan",
     "launchable": true,
     "folderAction": false,

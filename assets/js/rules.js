@@ -60,6 +60,9 @@
     onePerSquare: false,     // one token per square for everybody: landing on ANY token (own or opponent) sends it to
                              // its yard; safe squares do not protect then (so the same rule holds for all tokens)
     selfKick: false,         // legacy (0.2.0): only own tokens are kicked; kept so old games replay the same way
+    mustEnter: false,        // 0.4.0: a 6 must bring a token out of the yard while one is there (even onto an own token)
+    protectOwn: false,       // 0.4.0: with onePerSquare, a move may not land on an own token (only a forced entry does);
+                             // not a visible option – every game started by 0.4.0+ sets it, older games stay without it
   });
 
   function normalizeRules(r) {
@@ -148,12 +151,18 @@
   function legalMoves(state, roll) {
     if (state.over) return [];
     if (isThirdSix(state, roll)) return [];
-    const c = state.turn, out = [];
-    const canEnter = roll === 6 || (state.rules.enterOn === 'oneOrSix' && roll === 1);
+    const c = state.turn, out = [], r = state.rules, mine = state.tokens[c];
+    // "a 6 must bring a token out": the only moves are the tokens in the yard (an own token on the start square goes back)
+    if (r.mustEnter && roll === 6) {
+      const yard = [0, 1, 2, 3].filter(i => mine[i] === -1);
+      if (yard.length) return yard;
+    }
+    const canEnter = roll === 6 || (r.enterOn === 'oneOrSix' && roll === 1);
+    const ownBlocks = to => r.onePerSquare && r.protectOwn && to < FINISH && mine.some(q => q === to);
     for (let i = 0; i < 4; i++) {
-      const p = state.tokens[c][i];
-      if (p === -1) { if (canEnter) out.push(i); }
-      else if (p < FINISH && p + roll <= FINISH) out.push(i);
+      const p = mine[i];
+      if (p === -1) { if (canEnter && !ownBlocks(0)) out.push(i); }
+      else if (p < FINISH && p + roll <= FINISH && !ownBlocks(p + roll)) out.push(i);
     }
     return out;
   }

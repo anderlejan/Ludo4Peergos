@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 – test feedback round 3
+- New rule (off by default): **a 6 must bring a token out** of the yard while one is there. With "one token per
+  square" this also sends your own token on the start square back to the yard – the one case where that happens.
+- "One token per square" now protects your own tokens: you cannot move onto a square where one of yours stands
+  (opponents are still sent home, on every square). Games started with 0.3.0 keep their old rule.
+- Fixed: the board said "Roll again" also when the computer or another player rolled again; it now says who it is
+  ("Green rolls again" / "Zelený hází znovu"). Checked in English and Czech.
+- Fixed: the **Notes** button did nothing when Peergos left a request unanswered (Peergos' chat list can stay
+  unanswered for good when one chat fails to load – likely in the Peergos Windows app). The app no longer lets one
+  unanswered call block anything else: every call has a time limit, chat calls and data saves wait in separate
+  queues, reads of the app's own files do not wait at all, and Notes opens with this device's copy if Peergos is slow.
+- Online protocol 4: only new games that use the new rules ask 0.3.0 players to update.
+
 ## 0.3.0 – test feedback round 2
 - Online games you play in are always in the menu list now, also games a friend started: the app remembers every
   online game you open (also from the Peergos News feed) in its data folder, and asks both Peergos chat lists
