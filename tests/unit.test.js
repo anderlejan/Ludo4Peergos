@@ -16,6 +16,8 @@ function rng(seed) { // mulberry32
 }
 const bot = (level) => ({ kind: 'bot', level, name: level });
 const four = () => ({ seats: [bot('hard'), bot('normal'), bot('easy'), bot('normal')] });
+// 0.7.0: the hard computer looks ahead (~1 ms a move), so long bulk runs use it in every 5th game only
+const hardSome = k => bot(k % 5 ? 'normal' : 'hard');
 
 test('geometry: 52 distinct track cells, neighbours adjacent', () => {
   assert.strictEqual(R.TRACK.length, 52);
@@ -114,11 +116,11 @@ test('a game needs two players', () => {
   assert.throws(() => R.newGame({ seats: [bot('easy'), null, null, null] }));
 });
 
-test('1000 full bot games finish with consistent states (all levels)', () => {
+test('300 full bot games finish with consistent states (all levels)', () => {
   const rnd = rng(12345);
   let total = 0;
   const wins = { easy: 0, normal: 0, hard: 0 };
-  for (let g = 0; g < 1000; g++) {
+  for (let g = 0; g < 300; g++) {
     const levels = ['easy', 'normal', 'hard', 'normal'];
     const seats = g % 3 === 0 ? [bot(levels[0]), null, bot(levels[2]), null] : levels.map(bot);
     if (g % 3 === 1) seats[3] = null;
@@ -136,13 +138,13 @@ test('1000 full bot games finish with consistent states (all levels)', () => {
     total += steps;
     wins[s.seats[s.winner].level]++;
   }
-  console.log('  avg actions per game: ' + (total / 1000).toFixed(0) + ', wins by level: ' + JSON.stringify(wins));
+  console.log('  avg actions per game: ' + (total / 300).toFixed(0) + ', wins by level: ' + JSON.stringify(wins));
 });
 
 test('hard beats easy clearly in head-to-head games', () => {
   const rnd = rng(777);
   let hard = 0;
-  const N = 600;
+  const N = 300;
   for (let g = 0; g < N; g++) {
     const seats = g % 2 ? [bot('hard'), null, bot('easy'), null] : [bot('easy'), null, bot('hard'), null];
     let s = R.newGame({ seats, first: g % 4 < 2 ? 0 : 2 });
@@ -275,7 +277,7 @@ test('AI avoids sending its own token home when it has another move', () => {
 test('selfKick games still finish (500 bot games)', () => {
   const rnd = rng(4242);
   for (let g = 0; g < 500; g++) {
-    let s = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('normal')], rules: { selfKick: true } });
+    let s = R.newGame({ seats: [hardSome(g), bot('easy'), bot('normal'), bot('normal')], rules: { selfKick: true } });
     let steps = 0;
     while (!s.over) { const r = 1 + Math.floor(rnd() * 6); s = R.apply(s, { r, t: AI.choose(s, r, s.seats[s.turn].level, rnd) }).state; if (++steps > 6000) throw new Error('no end'); }
   }
@@ -383,7 +385,7 @@ test('rule onePerSquare: landing on ANY token sends it to its yard, safe squares
 test('onePerSquare games still finish (500 bot games), AI does not walk onto a start square for safety', () => {
   const rnd = rng(777);
   for (let g = 0; g < 500; g++) {
-    let s = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules: { onePerSquare: true } });
+    let s = R.newGame({ seats: [hardSome(g), bot('easy'), bot('normal'), hardSome(g + 2)], rules: { onePerSquare: true } });
     let steps = 0;
     while (!s.over) { const r = 1 + Math.floor(rnd() * 6); s = R.apply(s, { r, t: AI.choose(s, r, s.seats[s.turn].level, rnd) }).state; if (++steps > 6000) throw new Error('no end'); }
     for (let c = 0; c < 4; c++) { // never two tokens on one track square
@@ -480,7 +482,7 @@ test('new rules: 500 bot games each finish, own tokens never share or get kicked
   const rnd = rng(9090);
   for (const rules of [{ mustEnter: true }, { onePerSquare: true, protectOwn: true }, { onePerSquare: true, protectOwn: true, mustEnter: true }]) {
     for (let g = 0; g < 500; g++) {
-      let s = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules });
+      let s = R.newGame({ seats: [hardSome(g), bot('easy'), bot('normal'), hardSome(g + 2)], rules });
       let steps = 0;
       while (!s.over) {
         const r = 1 + Math.floor(rnd() * 6), t = AI.choose(s, r, s.seats[s.turn].level, rnd);
@@ -534,7 +536,7 @@ test('rule safeBlock (0.5.0): safe squares together with one token per square', 
   // 500 bot games finish and never put two tokens on one square
   const rnd = rng(5150);
   for (let g = 0; g < 500; g++) {
-    let st = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules: Object.assign({ mustEnter: g % 2 === 0 }, rules) });
+    let st = R.newGame({ seats: [hardSome(g), bot('easy'), bot('normal'), hardSome(g + 2)], rules: Object.assign({ mustEnter: g % 2 === 0 }, rules) });
     let steps = 0;
     while (!st.over) {
       const r = 1 + Math.floor(rnd() * 6); st = R.apply(st, { r, t: AI.choose(st, r, st.seats[st.turn].level, rnd) }).state;
@@ -597,7 +599,7 @@ test('rule enterGrace (0.6.0): a 6 right after bringing a token out moves on ins
   // 500 bot games with the rule finish and never put two tokens on one square
   const rnd = rng(6060);
   for (let k = 0; k < 500; k++) {
-    let st = R.newGame({ seats: [bot('hard'), bot('easy'), bot('normal'), bot('hard')], rules: Object.assign({}, rules, { threeSixes: k % 2 === 0 }) });
+    let st = R.newGame({ seats: [hardSome(k), bot('easy'), bot('normal'), hardSome(k + 2)], rules: Object.assign({}, rules, { threeSixes: k % 2 === 0 }) });
     let steps = 0;
     while (!st.over) {
       const r = 1 + Math.floor(rnd() * 6); st = R.apply(st, { r, t: AI.choose(st, r, st.seats[st.turn].level, rnd) }).state;
@@ -607,6 +609,143 @@ test('rule enterGrace (0.6.0): a 6 right after bringing a token out moves on ins
       if (++steps > 8000) throw new Error('no end');
     }
   }
+});
+
+// ───────────────────────── 0.7.0 ─────────────────────────
+const CZECH = { enterOn: 'six', mustEnter: false, threeTries: true, sixBonus: true, threeSixes: false, captureBonus: false, finishBonus: false,
+  onePerSquare: true, safeSquares: false, endMode: 'first', protectOwn: true, safeBlock: true, enterGrace: true };
+
+test('rules have fixed numbers; changed rules are named by number (as they play)', () => {
+  assert.deepStrictEqual(R.RULE_ORDER.slice(0, 10), ['enterOn', 'mustEnter', 'threeTries', 'sixBonus', 'threeSixes', 'captureBonus', 'finishBonus', 'onePerSquare', 'safeSquares', 'endMode']);
+  assert.strictEqual(R.ruleNo('enterOn'), 1);
+  assert.strictEqual(R.ruleNo('endMode'), 10);
+  assert.strictEqual(R.ruleNo('selfKick'), 11);
+  assert.strictEqual(R.ruleNo('protectOwn'), null);
+  assert.deepStrictEqual(R.changedRules({}, { mustEnter: true, onePerSquare: true, safeSquares: false, safeBlock: true }), [2, 8, 9]);
+  // a game before 0.5.0 (no safeBlock): safe squares did nothing together with one token per square
+  assert.deepStrictEqual(R.changedRules({ onePerSquare: true, safeSquares: true }, { onePerSquare: true, safeSquares: false }), []);
+  assert.deepStrictEqual(R.changedRules({}, {}), []);
+});
+
+test('protocol: the host changes the rules before the first roll (a setup that replaces the last one)', () => {
+  const seats = [{ kind: 'human', user: 'alice' }, null, { kind: 'human', user: 'bob' }, { kind: 'bot', level: 'hard' }];
+  const s1 = P.msg('setup', { g: 'G1', seats, rules: {}, first: 3, round: 1, agree: true });
+  const no = P.msg('say', { g: 'G1', text: 'no', rulesOk: false });
+  const offer = P.msg('say', { g: 'G1', text: 'try this', offer: { rules: { onePerSquare: true, safeSquares: false, evil: 1 }, rulesName: '  Bob’s   rules ' } });
+  const s2 = P.msg('setup', { g: 'G2', seats, rules: Object.assign({}, CZECH, { captureBonus: true, finishBonus: true, threeSixes: true }), first: 3, round: 1, replaces: 'G1', agree: true, rulesName: 'Bob’s rules' });
+  const yes = P.msg('say', { g: 'G2', text: 'ok', rulesOk: true });
+  const e = [[s1, 'alice'], [no, 'bob'], [offer, 'bob'], [s2, 'alice'], [yes, 'bob']].map(([m, a]) => ({ author: a, text: P.encode(m) }));
+  const rep = P.replay(e, 'alice');
+  assert.strictEqual(rep.setup.g, 'G2');
+  assert.strictEqual(rep.state.rules.onePerSquare, true);
+  assert.strictEqual(rep.rounds.length, 1, 'the replaced setup is no round of its own');
+  assert.strictEqual(rep.rounds[0].g, 'G2');
+  const lines = rep.timeline.filter(x => x.kind === 'rules');
+  assert.strictEqual(lines.length, 1);
+  assert.deepStrictEqual(lines[0].changed, [8, 9]);
+  assert.strictEqual(rep.timeline.filter(x => x.kind === 'round').length, 1);
+  assert.deepStrictEqual(rep.votes, { bob: true }, 'answers count for the current rules only');
+  const o = rep.timeline.find(x => x.offer);
+  assert.deepStrictEqual(o.offer, { rules: { onePerSquare: true, safeSquares: false }, rulesName: 'Bob’s rules' }, 'suggestions are cleaned');
+  // a player who handed over before the change stays handed over
+  const res = P.msg('resign', { g: 'G1', c: 2, after: 0 });
+  assert.strictEqual(P.replay(e.concat([{ author: 'bob', text: P.encode(res) }]), 'alice').resignedAt[2], 0);
+  // a "replacement" from somebody else than the host is ignored
+  const fake = P.msg('setup', { g: 'G3', seats, rules: {}, first: 0, round: 1, replaces: 'G2' });
+  assert.strictEqual(P.replay(e.concat([{ author: 'bob', text: P.encode(fake) }]), 'alice').setup.g, 'G2');
+  // no new protocol: an app of 0.6.0 plays the replacing setup (the last one) the same way
+  assert.ok(s2.v <= 6 && P.PROTOCOL === 6);
+});
+
+test('protocol: Peergos\' RemoveMember (a member deleted their copy of the chat) counts as leaving', () => {
+  const g = onlineGame(9090, { limit: 40 });
+  const bobMoves = g.entries.map(e => P.decode(e.text)).filter(m => m && m.k === 'move' && m.c === 2).map(m => m.n);
+  const entries = g.entries.concat([{ type: 'RemoveMember', author: 'alice', removeUsername: 'bob', timestamp: '2026-10-22 10:50:07' }]);
+  const rep = P.replay(entries, 'alice');
+  assert.deepStrictEqual(rep.left, ['bob']);
+  assert.strictEqual(rep.resignedAt[2], Math.max(...bobMoves) + 1, 'handed over after bob\'s last move');
+  assert.strictEqual(rep.state.n, g.final.n, 'bob\'s earlier moves still count');
+  assert.ok(rep.timeline.some(x => x.kind === 'left' && x.author === 'bob'));
+  // the host's app plays on for bob
+  const st = rep.state;
+  if (st.turn === 2 && !st.over) assert.strictEqual(rep.controller(2, st.n), 'alice');
+  // a second RemoveMember of the same member changes nothing
+  assert.deepStrictEqual(P.replay(entries.concat([entries[entries.length - 1]]), 'alice').left, ['bob']);
+});
+
+// Positions where the hard computer must not make a dumb move (each checked with 1500 Monte Carlo games per move).
+const relOf = (c, cell) => (cell - R.START[c] + 52) % 52;
+const SCENARIOS = [
+  { id: 'capture the last token of a player about to win', rules: {}, seats: [1, 0, 1, 0], roll: 3,
+    tokens: [[relOf(0, 15), 40, 53, 56], null, [56, 56, 56, 44], null], want: 0 },
+  { id: 'no capture: move the chaser closer behind that token (not the token in the home column)', rules: {}, seats: [1, 0, 1, 0], roll: 2,
+    tokens: [[relOf(0, 14), 40, 53, 56], null, [56, 56, 56, 44], null], want: 0 },
+  { id: 'Czech rules: get off the start square of a player waiting with all tokens in the yard', rules: CZECH, seats: [1, 0, 1, 0], roll: 4,
+    tokens: [[relOf(0, 26), relOf(0, 5), -1, -1], null, [-1, -1, -1, 56], null], want: 0 },
+  { id: 'escape onto a safe square from a token two squares behind', rules: {}, seats: [1, 0, 1, 0], roll: 3,
+    tokens: [[relOf(0, 36), relOf(0, 20), -1, -1], null, [relOf(2, 34), -1, -1, -1], null], want: 0 },
+  { id: 'two captures: hit the leader, not the more advanced token of a player far behind', rules: {}, seats: [1, 1, 0, 1], roll: 4,
+    tokens: [[relOf(0, 29), relOf(0, 31), -1, -1], [56, 56, 56, relOf(1, 33)], null, [relOf(3, 35), -1, -1, -1]], want: 0 },
+];
+test('hard: no dumb moves in known positions', () => {
+  for (const sc of SCENARIOS) {
+    const s = R.newGame({ seats: sc.seats.map(x => (x ? bot('hard') : null)), rules: sc.rules, first: 0 });
+    sc.tokens.forEach((tk, c) => { if (tk) s.tokens[c] = tk.slice(); });
+    for (const seed of [1, 2, 3]) assert.strictEqual(AI.choose(s, sc.roll, 'hard', rng(seed)), sc.want, sc.id);
+  }
+  // the position of the user's example: normal moves its home-column token, hard chases
+  const sc = SCENARIOS[1];
+  const s = R.newGame({ seats: sc.seats.map(x => (x ? bot('normal') : null)), rules: sc.rules, first: 0 });
+  sc.tokens.forEach((tk, c) => { if (tk) s.tokens[c] = tk.slice(); });
+  assert.notStrictEqual(AI.choose(s, sc.roll, 'normal', rng(1)), sc.want, 'normal does not see it (this is why hard exists)');
+});
+
+test('levels: hard beats normal, a child-like player beats easy (fixed dice, 2 players, standard and Czech rules)', () => {
+  const child = (s, r, rnd) => { // captures when it sees one, likes to bring tokens out, otherwise moves a front token or anything
+    const l = R.legalMoves(s, r); if (!l.length) return -1; if (l.length === 1) return l[0];
+    const cap = l.filter(t => R.capturesAt(s, s.turn, R.target(s, t, r).to).length);
+    if (cap.length && rnd() < 0.7) return cap[0];
+    const ent = l.filter(t => s.tokens[s.turn][t] === -1);
+    if (ent.length && rnd() < 0.6) return ent[0];
+    if (rnd() < 0.5) return l.reduce((a, b) => (s.tokens[s.turn][b] > s.tokens[s.turn][a] ? b : a));
+    return l[Math.floor(rnd() * l.length)];
+  };
+  const duel = (A, B, rules, N, seed) => {
+    let wa = 0;
+    for (let g = 0; g < N; g++) {
+      const rnd = rng(seed + g), dice = rng(seed * 7 + g);
+      const pA = g % 2 ? 0 : 2;
+      let s = R.newGame({ seats: [bot('normal'), null, bot('normal'), null], rules, first: g % 4 < 2 ? 0 : 2 });
+      while (!s.over) { const r = 1 + Math.floor(dice() * 6); const f = s.turn === pA ? A : B; s = R.apply(s, { r, t: f(s, r, rnd) }).state; }
+      if (s.winner === pA) wa++;
+    }
+    return wa / N;
+  };
+  const lv = l => (s, r, rnd) => AI.choose(s, r, l, rnd);
+  const hs = duel(lv('hard'), lv('normal'), {}, 240, 100), hc = duel(lv('hard'), lv('normal'), CZECH, 240, 300);
+  const ec = duel(lv('easy'), child, {}, 240, 500);
+  console.log('  hard vs normal: ' + (100 * hs).toFixed(0) + '% (standard), ' + (100 * hc).toFixed(0) + '% (Czech); easy vs a child-like player: ' + (100 * ec).toFixed(0) + '%');
+  assert.ok(hs > 0.52 && hc > 0.52, 'hard should beat normal');
+  assert.ok(ec < 0.45, 'a child should beat easy');
+});
+
+test('hard: thinking stays quick (every rule set, 4 players)', () => {
+  let max = 0, sum = 0, n = 0;
+  for (const rules of [{}, CZECH, { mustEnter: true, onePerSquare: true, protectOwn: true, safeBlock: true, enterGrace: true }, { endMode: 'all', enterOn: 'oneOrSix' }]) {
+    const rnd = rng(42);
+    let s = R.newGame({ seats: [bot('hard'), bot('hard'), bot('hard'), bot('hard')], rules });
+    let steps = 0;
+    while (!s.over && steps < 1500) {
+      const r = 1 + Math.floor(rnd() * 6);
+      const t0 = process.hrtime.bigint();
+      const t = AI.choose(s, r, 'hard', rnd);
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      if (R.legalMoves(s, r).length > 1) { max = Math.max(max, ms); sum += ms; n++; }
+      s = R.apply(s, { r, t }).state; steps++;
+    }
+  }
+  console.log('  hard: ' + n + ' choices, avg ' + (sum / n).toFixed(1) + ' ms, max ' + max.toFixed(1) + ' ms');
+  assert.ok(max < 80, 'a hard move took ' + max.toFixed(1) + ' ms');
 });
 
 console.log((process.exitCode ? 'FAILED' : 'OK') + ' – ' + passed + ' tests passed');

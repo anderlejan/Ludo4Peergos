@@ -3,7 +3,7 @@
 
   python3 tests/browser_test.py [--shots DIR]
 
-Starts its own mock server (ports 8811-8813, users alice/bob/carol) and checks:
+Starts its own mock server (ports 8811-8813, users alice/bob/carol) and checks (--only7: just section 7):
   1. a full local game (you + 3 computers) to the end, saved to the data folder, winner dialog
   2. settings are saved at once to the data folder and come back on a fresh browser (restart test)
   3. a full online game: alice hosts, bob joins, one computer seat run by alice; both end in the same state
@@ -73,6 +73,202 @@ def play_until_over(pages, timeout=240):
     return False
 
 
+def wait_until(fn, timeout=30, step=0.2):
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            if fn():
+                return True
+        except Exception:
+            pass
+        time.sleep(step)
+    return False
+
+
+def section7(browser):
+    print('7a. numbered rules and rule sets (0.7.0)')
+    pg = new_page(browser, 'carol')
+    pg.evaluate("L4P.App.set({lang: 'auto', anim: 'instant', sound: false, autoRoll: false, confirmLeave: false, rules: L4P.Rules.DEFAULT_RULES, ruleSets: []})")
+    pg.click('#btn-settings')
+    pg.click('.set-tab[data-sec="rules"]')
+    nos = pg.evaluate("[...document.querySelectorAll('.set-pane .rule-row')].map(r => r.dataset.no)")
+    ok('rules numbered 1–10 in Settings → Rules', nos == [str(i) for i in range(1, 11)], json.dumps(nos))
+    ok('built-in rule sets offered (standard, Czech)', pg.locator('.set-chip[data-set="standard"]').count() == 1 and pg.locator('.set-chip[data-set="czech"]').count() == 1)
+    ok('standard rules recognised as the "Standard rules" set', pg.locator('.set-chip.on[data-set="standard"]').count() == 1)
+    pg.click('.set-chip[data-set="czech"] .set-pick')
+    time.sleep(0.4)
+    r = pg.evaluate('L4P.App.settings().rules')
+    ok('Czech set applied: one token per square, no safe squares, no capture/home bonus, no third-six limit', r['onePerSquare'] and not r['safeSquares'] and not r['captureBonus'] and not r['finishBonus'] and not r['threeSixes'] and r['sixBonus'] and r['threeTries'], json.dumps(r))
+    pg.click('.rule-row[data-rule="mustEnter"] .slider')
+    time.sleep(0.3)
+    ok('a changed rule leaves the set ("custom rules")', pg.locator('.set-chip.on').count() == 0 and 'custom rules' in pg.inner_text('.set-bar'))
+    pg.click('.set-save')
+    pg.fill('.set-name', 'Joe’s rules')
+    pg.click('.set-save-row .btn.primary')
+    time.sleep(0.8)
+    sets = pg.evaluate('L4P.App.settings().ruleSets')
+    ok('own rule set saved with its rules', len(sets) == 1 and sets[0]['name'] == 'Joe’s rules' and sets[0]['rules']['mustEnter'] is True, json.dumps(sets))
+    ok('own rule set saved to the data folder', 'Joe’s rules' in mock_state()['data']['carol'].get('settings.json', '').encode().decode('unicode_escape', 'ignore') or 'Joe' in mock_state()['data']['carol'].get('settings.json', ''))
+    ok('the saved set is now the current one', pg.locator('.set-chip.on .set-pick:has-text("Joe")').count() == 1)
+    pg.keyboard.press('Escape')
+    pg.click('#btn-help')
+    items = pg.evaluate("[...document.querySelectorAll('#help-rules li')].map(li => li.dataset.no)")
+    ok('How to play lists the rules with their numbers', items == [str(i) for i in range(1, 11)], json.dumps(items))
+    ok('How to play names the rule set', 'Joe’s rules' in pg.inner_text('.help-head'), pg.inner_text('.help-head'))
+    pg.keyboard.press('Escape')
+
+    print('7b. a local game: rules can change until the first roll; the moves list in words')
+    pg.evaluate("L4P.App.set({rules: L4P.Rules.DEFAULT_RULES, quickOpponents: 3})")
+    pg.click('#act-quick')
+    pg.wait_for_function('L4P.App.game && L4P.App.game.state')
+    ok('"Change rules" offered before the first roll', pg.locator('#btn-change-rules').count() == 1)
+    ok('no stray "null" on the game screen (rules open)', 'null' not in pg.inner_text('body'), pg.inner_text('.info-box'))
+    pg.click('#btn-change-rules')
+    pg.wait_for_selector('.dlg-rules')
+    pg.click('.dlg-rules .set-chip[data-set="czech"] .set-pick')
+    pg.click('#btn-apply-rules')
+    pg.wait_for_function("L4P.App.game && L4P.App.game.sess.rec.setup.rulesSet === 'czech'")
+    setup = pg.evaluate('L4P.App.game.sess.rec.setup')
+    ok('the game got the Czech rules (same game, no move yet)', setup['rules']['onePerSquare'] and not setup['rules']['safeSquares'] and pg.evaluate('L4P.App.game.state.n') == 0, json.dumps(setup['rules']))
+    ok('"This game" names the rule set', 'Člověče, nezlob se!' in pg.inner_text('.info-box'), pg.inner_text('.info-box'))
+    pg.evaluate("document.getElementById('die').click()")
+    ok('the first roll locks the rules', wait_until(lambda: pg.locator('#btn-change-rules').count() == 0, 10))
+    ok('no stray "null" on the game screen (rules locked)', 'null' not in pg.inner_text('body'), pg.inner_text('.info-box'))
+    pg.evaluate("L4P.App.set({autoRoll: true, autoMove: true})")
+    ok('moves listed in words (no token numbers)', wait_until(lambda: pg.evaluate("[...document.querySelectorAll('#log li')].some(li => /brought a token out|moved/.test(li.textContent))"), 60) and pg.evaluate("![...document.querySelectorAll('#log li')].some(li => /#\\d/.test(li.textContent))"))
+    wait_until(lambda: pg.evaluate("L4P.App.bannerLog.some(b => /Computer/.test(b.text))"), 60)
+    status_texts = pg.evaluate('L4P.App.bannerLog.map(b => b.text)')
+    ok('turn texts say "Computer" without the level', not [x for x in status_texts if 'Normal' in x or 'Hard' in x or 'Easy' in x] and any('Computer' in x for x in status_texts), json.dumps(status_texts[:5]))
+    ok('the players list still shows the level', 'NORMAL' in pg.inner_text('.players').upper())
+    pg.evaluate("L4P.App.set({autoRoll: false})")
+    # (the computers keep playing; new lines scroll the list under a real mouse pointer, so send the events directly)
+    shown = pg.evaluate("() => { const li = [...document.querySelectorAll('#log li.has-move')].pop(); li.dispatchEvent(new MouseEvent('mouseenter')); return document.querySelectorAll('.b-hl .hl-ring').length; }")
+    ok('pointing at a move shows it on the board', shown == 1, shown)
+    gone = pg.evaluate("() => { const li = [...document.querySelectorAll('#log li.has-move')].pop(); li.dispatchEvent(new MouseEvent('mouseleave')); return document.querySelectorAll('.b-hl .hl-ring').length; }")
+    ok('moving away hides it again', gone == 0, gone)
+    tapped = pg.evaluate("() => { const li = [...document.querySelectorAll('#log li.has-move')].pop(); li.click(); return document.querySelectorAll('.b-hl .hl-ring').length; }")
+    ok('tapping a move shows it too (phones)', tapped == 1, tapped)
+    if SHOTS:
+        pg.screenshot(path=os.path.join(SHOTS, 'move-highlight.png'))
+    face = pg.evaluate("getComputedStyle(document.querySelector('.die .face')).backgroundColor")
+    ok('the die face is white', face in ('rgb(255, 255, 255)',), face)
+    ok('no script errors (7a/7b)', not pg.errors, '; '.join(pg.errors[:3]))
+    pg.context.close()
+
+    print('7c. online: players agree on the rules before the first roll; the host switches rule sets')
+    a = new_page(browser, 'alice')
+    fast(a, autoRoll=False)
+    a.evaluate("L4P.App.set({lang: 'auto', rules: L4P.Rules.DEFAULT_RULES, agreeRules: true})")
+    a.click('#act-friends')
+    a.wait_for_selector('.dlg-new')
+    a.click('.seat-row:nth-child(2) .seg-btn:has-text("Empty")') if a.locator('.seat-row:nth-child(2) .seg-btn:has-text("Empty")').count() else None
+    a.click('.seat-row:nth-child(4) .seg-btn:has-text("Computer")')
+    a.click('.first-row .seg-btn:nth-child(5)')  # blue (the computer) begins
+    ok('"Let players agree on the rules" offered and on', a.evaluate("document.getElementById('new-agree').checked") is True)
+    post('/mock/invite-order', {'order': ['bob']})
+    a.click('.dlg-new .btn.primary')
+    a.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
+    chat = a.evaluate('L4P.App.game.sess.chatId')
+    ok('the setup says the players may agree', a.evaluate('L4P.App.game.replay.setup.agree') is True)
+    post('/mock/join', {'chat': chat, 'user': 'bob'})
+    b = new_page(browser, 'bob', '&chatId=' + urllib.request.quote(chat, safe='$'))
+    fast(b, autoRoll=False, lang='auto')
+    b.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
+    ok('the computer waits: the host starts the game', wait_until(lambda: a.evaluate('L4P.App.game.phase') == 'start', 15) and 'begins' in a.inner_text('.status'), a.inner_text('.status'))
+    ok('bob can agree, disagree or suggest', wait_until(lambda: b.locator('#btn-rules-agree').count() == 1 and b.locator('#btn-rules-suggest').count() == 1, 15))
+    b.click('#btn-rules-disagree')
+    ok('alice sees that bob disagrees', wait_until(lambda: 'Not agreed: bob' in a.inner_text('.info-box') and 'DISAGREES' in a.inner_text('.players').upper(), 20), a.inner_text('.info-box'))
+    b.click('#btn-rules-suggest')
+    b.wait_for_selector('.dlg-rules')
+    b.click('.dlg-rules .set-chip[data-set="czech"] .set-pick')
+    b.click('#btn-send-suggest')
+    ok('alice gets the suggestion with a "Use" button', wait_until(lambda: a.locator('.say.offer .use-offer').count() == 1, 20))
+    if SHOTS:
+        a.screenshot(path=os.path.join(SHOTS, 'rules-suggested.png'))
+    a.click('.say.offer .use-offer')
+    a.wait_for_selector('.dlg-rules')
+    ok('the change dialog starts from the suggestion', a.locator('.dlg-rules .set-chip.on[data-set="czech"]').count() == 1)
+    a.click('#btn-apply-rules')
+    ok('both play the new rules (same round)', wait_until(lambda: b.evaluate('L4P.App.game.replay.setup.rulesSet') == 'czech' and a.evaluate('L4P.App.game.replay.setup.rulesSet') == 'czech', 20)
+       and b.evaluate('L4P.App.game.replay.rounds.length') == 1 and b.evaluate('L4P.App.game.state.rules.onePerSquare') is True)
+    ok('bob sees which rules changed (chat line with numbers)', wait_until(lambda: 'switched to “Člověče, nezlob se!”' in b.inner_text('.side-right'), 10), b.inner_text('.side-right')[-300:])
+    ok('the votes start again for the new rules', b.evaluate('Object.keys(L4P.App.game.replay.votes).length') == 0)
+    b.click('#btn-rules-agree')
+    ok('alice sees "Everybody agrees"', wait_until(lambda: 'Everybody agrees' in a.inner_text('.info-box'), 20), a.inner_text('.info-box'))
+    ok('no stray "null" on either screen', 'null' not in a.inner_text('body') and 'null' not in b.inner_text('body'))
+    if SHOTS:
+        a.screenshot(path=os.path.join(SHOTS, 'rules-agreed-alice.png'))
+        b.screenshot(path=os.path.join(SHOTS, 'rules-agreed-bob.png'))
+    a.evaluate("document.getElementById('die').click()")
+    ok('the host starts: the computer rolls, the rules lock', wait_until(lambda: a.evaluate('L4P.App.game.state.n') >= 1, 20) and wait_until(lambda: a.locator('#btn-change-rules').count() == 0 and b.locator('#btn-rules-agree').count() == 0, 20))
+    ok('no script errors (agreeing on rules)', not a.errors and not b.errors, '; '.join((a.errors + b.errors)[:3]))
+
+    print('7d. deleting a running game from the list tells the others')
+    b.click('.game-actions .btn:last-child')  # main menu
+    card = '#games-list .game-card.online[data-chat="%s"]' % chat
+    b.wait_for_selector(card, timeout=20000)
+    b.click(card + ' .icon-btn')
+    b.wait_for_selector('.dlg-small .btn.primary')
+    ok('the question says the others are told', 'the others are told' in b.inner_text('.dlg-small'), b.inner_text('.dlg-small'))
+    b.click('.dlg-small .btn.primary')
+    ok('alice sees "bob left the game"', wait_until(lambda: 'bob left the game' in a.inner_text('.side-right'), 30))
+    ok('the game is gone from bob\'s list', wait_until(lambda: b.locator(card).count() == 0, 10))
+    k = b.evaluate('c => L4P.App.known()[c]', chat)
+    ok('bob\'s copy of the chat is kept for a week (so the "leave" reaches everybody)', bool(k and k.get('removed') and k.get('purge', 0) > time.time() * 1000 + 6 * 86400 * 1000) and 'bob' in mock_state()['chats'][chat]['joined'], json.dumps(k))
+    b.evaluate("c => { L4P.App.known()[c].purge = Date.now() - 1; }", chat)
+    b.evaluate('L4P.App.purgeRemoved()')
+    ok('after the week it is deleted in Peergos', wait_until(lambda: 'bob' not in mock_state()['chats'][chat]['joined'], 10) and wait_until(lambda: 'purge' not in (b.evaluate('c => L4P.App.known()[c]', chat) or {}), 10))
+    ok('the owner\'s Peergos then marks bob as removed (counts as leaving, nothing changes)', any(m['type'] == 'RemoveMember' for m in mock_state()['chats'][chat]['messages']) and a.evaluate("L4P.App.game.replay.left.filter(u => u === 'bob').length") == 1)
+    ok('no script errors (delete = leave)', not a.errors and not b.errors, '; '.join((a.errors + b.errors)[:3]))
+    a.context.close(); b.context.close()
+
+    print('7d2. a player with an older app deletes the game: Peergos\' RemoveMember counts as leaving')
+    a = new_page(browser, 'alice')
+    fast(a, autoRoll=True)
+    a.evaluate("L4P.App.set({agreeRules: false})")
+    a.click('#act-friends')
+    a.wait_for_selector('.dlg-new')
+    post('/mock/invite-order', {'order': ['bob']})
+    a.click('.dlg-new .btn.primary')
+    a.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
+    chat = a.evaluate('L4P.App.game.sess.chatId')
+    post('/mock/join', {'chat': chat, 'user': 'bob'})
+    b = new_page(browser, 'bob', '&chatId=' + urllib.request.quote(chat, safe='$'))
+    fast(b, autoRoll=True)
+    b.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
+    wait_until(lambda: a.evaluate('L4P.App.game.state.n') >= 6, 60)
+    b.evaluate("L4P.App.set({autoRoll: false})")
+    b.evaluate("c => fetch('/peergos-api/v0/chat/' + encodeURIComponent(c), {method: 'DELETE'}).then(r => r.status)", chat)  # what 0.6.0 did
+    ok('alice is told that bob left', wait_until(lambda: 'bob left the game' in a.inner_text('.side-right'), 30))
+    ok('alice\'s computer plays bob\'s colour', wait_until(lambda: '(computer)' in a.inner_text('.players'), 10) and wait_until(lambda: a.evaluate("(() => { const g = L4P.App.game, c = g.state.seats.findIndex(s => s && s.user === 'bob'); return g.replay.history.some(h => h.c === c && h.author === 'alice'); })()"), 60))
+    ok('no script errors (old app deletes)', not a.errors and not b.errors, '; '.join((a.errors + b.errors)[:3]))
+    a.context.close(); b.context.close()
+
+    print('7e. online without agreeing: the computer starts at once, nobody votes')
+    a = new_page(browser, 'alice')
+    fast(a, autoRoll=False, agreeRules=True)
+    a.click('#act-friends')
+    a.wait_for_selector('.dlg-new')
+    a.click('.seat-row:nth-child(4) .seg-btn:has-text("Computer")')
+    a.click('.first-row .seg-btn:nth-child(5)')
+    a.click('.agree-row .slider')
+    ok('switch off', a.evaluate("document.getElementById('new-agree').checked") is False)
+    post('/mock/invite-order', {'order': ['bob']})
+    a.click('.dlg-new .btn.primary')
+    a.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
+    chat = a.evaluate('L4P.App.game.sess.chatId')
+    post('/mock/join', {'chat': chat, 'user': 'bob'})
+    b = new_page(browser, 'bob', '&chatId=' + urllib.request.quote(chat, safe='$'))
+    fast(b, autoRoll=False)
+    b.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
+    ok('the computer started without waiting', wait_until(lambda: a.evaluate('L4P.App.game.state.n') >= 1, 20))
+    ok('no agree buttons for bob', b.locator('#btn-rules-agree').count() == 0 and a.evaluate('!!L4P.App.game.replay.setup.agree') is False)
+    ok('setting remembered', a.evaluate('L4P.App.settings().agreeRules') is False)
+    a.evaluate('L4P.App.set({agreeRules: true})')
+    ok('no script errors (no agreeing)', not a.errors and not b.errors, '; '.join((a.errors + b.errors)[:3]))
+    a.context.close(); b.context.close()
+
+
 def main():
     mock = subprocess.Popen([sys.executable, os.path.join(HERE, 'mock_peergos.py')] + ['%d:%s' % (p, u) for u, p in PORTS.items()],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=dict(os.environ, MOCK_LATENCY='0.01'))
@@ -80,6 +276,11 @@ def main():
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
+            if '--only7' in sys.argv:  # quick run of the 0.7.0 checks
+                section7(browser)
+                browser.close()
+                print('FAILED: ' + ', '.join(failures) if failures else 'ALL OK (section 7)')
+                raise SystemExit(0 if not failures else 1)
 
             print('1. local game')
             pg = new_page(browser, 'alice')
@@ -117,7 +318,7 @@ def main():
             pg.click('.game-actions .btn:last-child')
             pg.wait_for_selector('.game-card')
             ok('home lists the saved game once', pg.locator('.game-card').count() == 1)
-            ok('home card describes the setup (players, colour, speed, rules, round)', all(x in pg.inner_text('.game-card') for x in ('You: Red', 'Speed: Instant', 'Rules: standard rules', 'Round 3', 'Computer · Normal')), pg.inner_text('.game-card'))
+            ok('home card describes the setup (players, colour, speed, rules, round)', all(x in pg.inner_text('.game-card') for x in ('You: Red', 'Speed: Instant', 'Rules: Standard rules', 'Round 3', 'Computer · Normal')), pg.inner_text('.game-card'))
 
             print('1b. quick game with 1 opponent and the saved settings; rules and speed locked in the game')
             # a 0.2.0 setting "selfKick" must come back as the 0.3.0 rule "one token per square" (for all tokens)
@@ -462,6 +663,8 @@ def main():
             post('/mock/delay', {'user': 'bob', 'paths': [], 'seconds': 0})
             ok('no script errors (slow reads)', not [e for e in a.errors + b.errors if 'did not answer' not in e], '; '.join((a.errors + b.errors)[:3]))
             a.context.close(); b.context.close()
+
+            section7(browser)
             browser.close()
     finally:
         mock.terminate()

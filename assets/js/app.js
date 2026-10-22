@@ -30,7 +30,7 @@
   const DEFAULTS = {
     theme: 'auto', lang: 'auto', sound: true, volume: 0.6, anim: 'normal', tokens: 'glossy',
     autoMove: true, autoRoll: false, hints: true, confirmLeave: true, showNotes: true,
-    level: 'normal', rules: settingsRules(R.DEFAULT_RULES), quickOpponents: 3,
+    level: 'normal', rules: settingsRules(R.DEFAULT_RULES), quickOpponents: 3, ruleSets: [], agreeRules: true,
     lastLocal: null, lastOnline: null, settingsSection: 'look', savedAt: 0,
   };
   // Durations in ms. 0.2.0: twice as slow as 0.1.0 (step, think, dice, pause) plus a turn banner.
@@ -56,6 +56,71 @@
     n.enterGrace = true; // 0.6.0: a second 6 right after bringing a token out moves on instead of kicking it
     return n;
   }
+  // ───────────────────────────── rule sets ─────────────────────────────
+  // 0.7.0: the rules have fixed numbers (Rules.RULE_ORDER) and can be kept as named sets – built-in ones and the
+  // player's own (settings.ruleSets). A game's setup remembers the set its rules came from (rulesSet / rulesName).
+  const VISIBLE_RULES = R.RULE_ORDER.filter(k => k !== 'selfKick');
+  const MAX_SETS = 20;
+  const BUILTIN_SETS = [
+    { id: 'standard', rules: {} },
+    // "Člověče, nezlob se!" as the common Czech editions describe it: a 6 brings a token out (no must) and rolls again,
+    // three tries while no token is out, no extra roll for a capture or for reaching home, one token per square (own
+    // tokens cannot be landed on, opponents are sent home), no safe squares, the first player home wins.
+    { id: 'czech', rules: { enterOn: 'six', mustEnter: false, threeTries: true, sixBonus: true, threeSixes: false, captureBonus: false,
+      finishBonus: false, onePerSquare: true, safeSquares: false, endMode: 'first' } },
+  ];
+  /** Only the numbered (visible) rules – what a rule set stores. */
+  function visibleRules(r) { const n = R.normalizeRules(r), o = {}; VISIBLE_RULES.forEach(k => { o[k] = n[k]; }); return o; }
+  function rulesOfSet(set) { return settingsRules(Object.assign({}, R.DEFAULT_RULES, set.rules, { safeBlock: true })); }
+  /** The rules as they play (in games before 0.5.0 safe squares did nothing together with one token per square). */
+  const effectiveRules = R.effectiveRules;
+  /** Numbers of the rules that play differently in b than in a. */
+  const changedNos = R.changedRules;
+  const sameRules = (a, b) => R.changedRules(a, b).length === 0;
+  const cleanSetName = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 40);
+  function userSets() { return (Array.isArray(settings.ruleSets) ? settings.ruleSets : []).filter(x => x && typeof x.name === 'string' && x.name && x.rules && typeof x.rules === 'object'); }
+  function allSets() {
+    return BUILTIN_SETS.map(x => ({ id: x.id, builtIn: true, name: t('sets.' + x.id), note: t('sets.' + x.id + '.note'), rules: rulesOfSet(x) }))
+      .concat(userSets().map(x => ({ id: x.id, name: x.name, rules: rulesOfSet(x) })));
+  }
+  /** The name of a game's rules: the set its host picked (while the rules are still that set), else a set with the same rules. */
+  function setNameOf(rules, setup) {
+    const sets = allSets();
+    if (setup && setup.rulesSet) { const b = sets.find(x => x.builtIn && x.id === setup.rulesSet); if (b && sameRules(b.rules, rules)) return b.name; }
+    if (setup && cleanSetName(setup.rulesName)) return cleanSetName(setup.rulesName);
+    const m = sets.find(x => sameRules(x.rules, rules));
+    return m ? m.name : '';
+  }
+  /** What a new setup records about the set its rules come from: {rulesSet: id} for a built-in set, {rulesName} for an own set. */
+  function setStamp(rules) {
+    const m = allSets().find(x => sameRules(x.rules, rules));
+    return !m ? {} : m.builtIn ? { rulesSet: m.id } : { rulesName: m.name };
+  }
+  /** Saves (or replaces, by name) an own rule set; returns false when the list is full. */
+  async function saveUserSet(name, rules) {
+    name = cleanSetName(name);
+    if (!name) return false;
+    const list = userSets().map(x => Object.assign({}, x));
+    const same = list.find(x => x.name.toLowerCase() === name.toLowerCase());
+    if (same) {
+      if (sameRules(rulesOfSet(same), rules)) return true;
+      if (!(await confirm(t('sets.replace', { name: same.name }), t('sets.save')))) return false;
+      same.rules = visibleRules(rules);
+    } else {
+      if (list.length >= MAX_SETS) { toast(t('sets.full', { n: MAX_SETS }), 'warn', 5000); return false; }
+      list.push({ id: 'u' + P.randomId(6), name, rules: visibleRules(rules) });
+    }
+    set({ ruleSets: list }, { quiet: true });
+    toast(t('sets.saved', { name }), 'ok', 2500);
+    return true;
+  }
+  async function deleteUserSet(id) {
+    const x = userSets().find(y => y.id === id);
+    if (!x || !(await confirm(t('sets.delete', { name: x.name }), t('sets.deleteBtn'), { danger: true }))) return false;
+    set({ ruleSets: userSets().filter(y => y.id !== id) }, { quiet: true });
+    return true;
+  }
+
   let settings = Object.assign({}, DEFAULTS, S.lsGet('settings', {}));
   delete settings.showFullscreen;
   settings.rules = settingsRules(settings.rules);
@@ -141,7 +206,7 @@
     if (!rep || !rep.setup) return;
     const wins = [0, 0, 0, 0];
     for (const r of rep.rounds) if (r.over && r.winner != null) wins[r.winner]++;
-    onlineInfo[chatId] = { seats: rep.setup.seats, rules: rep.setup.rules, speed: rep.setup.speed || null, round: rep.rounds.length ? rep.rounds[rep.rounds.length - 1].round : 1,
+    onlineInfo[chatId] = { seats: rep.setup.seats, rules: rep.setup.rules, rulesSet: rep.setup.rulesSet || null, rulesName: cleanSetName(rep.setup.rulesName) || null, speed: rep.setup.speed || null, round: rep.rounds.length ? rep.rounds[rep.rounds.length - 1].round : 1,
       over: rep.state.over, turn: rep.state.turn, wins, checked: Date.now(),
       left: (rep.left || []).indexOf(ME) >= 0, hostLeft: !!rep.hostLeft, leftUsers: rep.left || [] };
     S.lsSet('onlineInfo', onlineInfo);
@@ -162,9 +227,25 @@
     knownOnline[chatId] = k;
     if (changed || !k.saved || Date.now() - k.saved > 3600000) { k.saved = Date.now(); saveKnown(); } else S.lsSet('knownOnline', knownOnline);
   }
-  function forgetGame(chatId) {
-    knownOnline[chatId] = { removed: Date.now() };
+  /** Chat entries the game replays: the app's messages, and Peergos' own RemoveMember (a member deleted their copy). */
+  const gameEntry = e => !!e && ((e.type === 'Application' && !!e.text) || (e.type === 'RemoveMember' && !!e.removeUsername));
+  /** purgeAt: when to delete this user's copy of the chat in Peergos (0.7.0, see deleteOnlineGame); none = done. */
+  function forgetGame(chatId, purgeAt) {
+    knownOnline[chatId] = purgeAt ? { removed: Date.now(), purge: purgeAt } : { removed: Date.now() };
     saveKnown();
+  }
+  /** Deletes the Peergos copies of games removed from the list a while ago (a few per call). */
+  let purging = false;
+  async function purgeRemoved() {
+    if (purging || !Net.available) return;
+    purging = true;
+    try {
+      const due = Object.entries(knownOnline).filter(([, k]) => k && k.removed && k.purge && k.purge <= Date.now()).slice(0, 3);
+      for (const [id, k] of due) {
+        try { await Net.remove(id); } catch (e) { continue; } // no answer: try again next time
+        if (knownOnline[id] === k) { delete k.purge; saveKnown(); }
+      }
+    } finally { purging = false; }
   }
   async function loadRemoteKnown() {
     try {
@@ -194,9 +275,10 @@
   const colorName = c => t('color.' + c);
   const chip = (c, cls) => h('span', { class: 'chip' + (cls ? ' ' + cls : ''), style: { background: 'var(--p' + c + ')' } });
 
-  function seatName(seat, c) {
+  /** withLevel: only where a game's setup is described (menu, "This game") – during play a computer is just "Computer". */
+  function seatName(seat, c, withLevel) {
     if (!seat) return '';
-    if (seat.kind === 'bot') return t('game.computerName') + ' · ' + t('level.' + (seat.level || 'normal'));
+    if (seat.kind === 'bot') return t('game.computerName') + (withLevel ? ' · ' + t('level.' + (seat.level || 'normal')) : '');
     if (seat.kind === 'local') return seat.name || colorName(c);
     if (seat.user && seat.user === ME) return t('common.you');
     if (seat.user === 'me') return t('common.you');
@@ -204,18 +286,23 @@
   }
   const isMine = seat => !!seat && seat.kind === 'human' && (seat.user === ME || (!ME && seat.user === 'me') || seat.user === 'me');
 
-  /** Short text of the rules that differ from the standard ones, and the full list for a tooltip. */
-  function rulesShort(rules) {
+  /** One numbered rule as a line of text ("2. ✓ A 6 must bring a token out …"). */
+  function ruleLine(r, k) {
+    const no = R.ruleNo(k) + '. ';
+    if (k === 'enterOn') return no + t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
+    if (k === 'endMode') return no + t('rule.endMode') + ': ' + t('rule.endMode.' + r.endMode);
+    return no + (effectiveRules(r)[k] ? '✓ ' : '✗ ') + t('rule.' + k);
+  }
+  /** Short text of a game's rules – the name of its rule set, else the numbered rules that differ from the standard
+   *  ones ("#2 a 6 must bring a token out") – and the full numbered list for a tooltip. setup: {rulesSet, rulesName}. */
+  function rulesShort(rules, setup) {
     const r = R.normalizeRules(rules), d = R.DEFAULT_RULES, diff = [];
-    // selfKick only shows in old (0.2.0) games; protectOwn is part of "one token per square" since 0.4.0, not an option
-    const keys = Object.keys(d).filter(k => (k !== 'selfKick' || r.selfKick) && ['protectOwn', 'safeBlock', 'enterGrace'].indexOf(k) < 0);
-    for (const k of keys) if (r[k] !== d[k] && !(k === 'safeSquares' && r.onePerSquare && !r.safeBlock)) diff.push(t('short.' + k));
-    const full = keys.map(k => {
-      if (k === 'enterOn') return t('rule.enterOn') + ': ' + t('rule.enterOn.' + r.enterOn);
-      if (k === 'endMode') return t('rule.endMode') + ': ' + t('rule.endMode.' + r.endMode);
-      return (r[k] ? '✓ ' : '✗ ') + t('rule.' + k);
-    }).join('\n');
-    return { text: diff.length ? diff.join(' · ') : t('short.standard'), full };
+    // selfKick only shows in old (0.2.0) games; protectOwn, safeBlock and enterGrace are no options (see settingsRules)
+    const keys = R.RULE_ORDER.filter(k => k !== 'selfKick' || r.selfKick);
+    for (const k of keys) if (effectiveRules(r)[k] !== d[k]) diff.push('#' + R.ruleNo(k) + ' ' + t('short.' + k));
+    const full = keys.map(k => ruleLine(r, k)).join('\n');
+    const name = setNameOf(r, setup);
+    return { text: name || (diff.length ? diff.join(' · ') : t('short.standard')), name, diff, full };
   }
 
   /** How a game is set up: who plays which colour (with computer levels), your colour, speed, rules, round. */
@@ -225,13 +312,13 @@
     const mine = seats.findIndex(isMine);
     const wins = info.wins || [0, 0, 0, 0];
     const anyWins = wins.some(w => w > 0);
-    const rs = rulesShort(info.rules);
+    const rs = rulesShort(info.rules, info);
     return h('div', { class: 'sum' + (opts.compact ? ' compact' : '') },
-      h('div', { class: 'sum-players' }, seats.map((s, c) => s ? h('span', { class: 'sum-p' + (isMine(s) ? ' me' : ''), title: colorName(c) }, chip(c, 'sm'), seatName(s, c), anyWins ? h('b', { class: 'sum-w', title: t('sum.wins') }, '🏆' + wins[c]) : null) : null)),
+      h('div', { class: 'sum-players' }, seats.map((s, c) => s ? h('span', { class: 'sum-p' + (isMine(s) ? ' me' : ''), title: colorName(c) }, chip(c, 'sm'), seatName(s, c, true), anyWins ? h('b', { class: 'sum-w', title: t('sum.wins') }, '🏆' + wins[c]) : null) : null)),
       h('div', { class: 'sum-meta' },
         mine >= 0 ? h('span', null, t('sum.youPlay', { color: colorName(mine) })) : null,
         h('span', null, t('sum.speed', { speed: t('set.anim.' + speedId(info.speed)) })),
-        h('span', { title: rs.full }, t('sum.rules', { rules: rs.text })),
+        h('span', { class: 'sum-rules', title: rs.full }, t('sum.rules', { rules: rs.text })),
         info.round > 1 ? h('span', null, t('sum.round', { n: info.round })) : null));
   }
 
@@ -296,10 +383,44 @@
   }
   let homeTimer = null;
 
+  /** Deletes an online game from this user's list. 0.7.0: while the user still plays in it, the others are told first –
+   *  the same "leave" message as the Leave game button (before, deleting said nothing and the game just stopped). The
+   *  user's copy of the chat stays in Peergos for a week: Peergos hands a member's messages to the others only from that
+   *  copy, so deleting it at once would take the "leave" message with it (seen on a real 1.39 server). Afterwards
+   *  purgeRemoved deletes it, and the chat owner's Peergos then marks the member as removed. */
+  async function deleteOnlineGame(c) {
+    const info = onlineInfo[c.chatId];
+    const host = P.chatOwner(c.chatId) === ME;
+    const stillIn = !info || (!info.left && !info.hostLeft);
+    if (!(await confirm(t(stillIn ? (host ? 'home.deleteRunningHost' : 'home.deleteRunning') : 'home.deleteOnline'), t('home.delete'), { danger: true }))) return;
+    let keep = false;
+    if (stillIn) {
+      let told = false;
+      toast(t('home.deleting'), 'info', 3000);
+      try {
+        const res = await Net.read(c.chatId, 0);
+        const rep = P.replay(res.entries.filter(gameEntry), P.chatOwner(c.chatId));
+        const mine = rep.setup ? rep.setup.seats.findIndex(x => x && x.kind === 'human' && x.user === ME) : -1;
+        if (!rep.setup || rep.hostLeft || (rep.left || []).indexOf(ME) >= 0 || (mine < 0 && !host)) told = true; // nothing to tell
+        else {
+          await Net.send(c.chatId, P.encode(P.msg('leave', { g: rep.setup.g, c: mine, after: rep.state.n }, VERSION)));
+          told = true; keep = true;
+        }
+      } catch (err) { console.warn('leave before delete', err); }
+      if (!told && !(await confirm(t('home.deleteUnsent'), t('home.delete'), { danger: true }))) return;
+    }
+    if (keep) forgetGame(c.chatId, Date.now() + 7 * 24 * 3600 * 1000);
+    else { await Net.remove(c.chatId).catch(() => false); forgetGame(c.chatId); }
+    if (onlineList) onlineList = onlineList.filter(x => x.chatId !== c.chatId);
+    delete onlineInfo[c.chatId];
+    S.lsSet('onlineInfo', onlineInfo);
+    fillGamesList();
+  }
+
   function localInfo(g) {
     const wins = [0, 0, 0, 0];
     for (const r of g.rounds || []) if (r.over && r.winner != null) wins[r.winner]++;
-    return { seats: g.setup.seats, rules: g.setup.rules, speed: g.setup.speed, round: g.round || 1, wins };
+    return { seats: g.setup.seats, rules: g.setup.rules, rulesSet: g.setup.rulesSet, rulesName: g.setup.rulesName, speed: g.setup.speed, round: g.round || 1, wins };
   }
 
   function fillGamesList() {
@@ -337,7 +458,7 @@
             h('span', { class: 'gc-kind', title: t('home.online') }, icon('users')),
             h('span', { class: 'gc-main' }, h('span', { class: 'gc-title' }, h('b', null, c.title || 'Ludo'), h('small', null, (state ? state + ' · ' : '') + (others.join(', ') || '—') + (when ? ' · ' + UI.timeAgo(new Date(when)) : ''))),
               info ? summaryEl(info) : h('div', { class: 'sum muted small' }, t('sum.loading'))),
-            h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); if (await confirm(t('home.deleteOnline'), t('home.delete'), { danger: true })) { await Net.remove(c.chatId).catch(() => false); forgetGame(c.chatId); if (onlineList) onlineList = onlineList.filter(x => x.chatId !== c.chatId); delete onlineInfo[c.chatId]; S.lsSet('onlineInfo', onlineInfo); fillGamesList(); } } }, icon('trash'))),
+            h('button', { class: 'icon-btn small', title: t('home.delete'), onclick: async e => { e.stopPropagation(); await deleteOnlineGame(c); } }, icon('trash'))),
         });
       }
     }
@@ -371,7 +492,7 @@
       const todo = Array.from(ids).filter(id => !(knownOnline[id] && knownOnline[id].removed)).map(id => ({ chatId: id })).filter(c => (!onlineInfo[c.chatId] || Date.now() - (onlineInfo[c.chatId].checked || 0) > 600000) && !(Date.now() - (summaryFailed[c.chatId] || 0) < 600000)).slice(0, 6);
       for (const c of todo) {
         if (screen !== 'home') break;
-        try { const res = await Net.read(c.chatId, 0); rememberOnline(c.chatId, P.replay(res.entries.filter(e => e.type === 'Application'), P.chatOwner(c.chatId))); }
+        try { const res = await Net.read(c.chatId, 0); rememberOnline(c.chatId, P.replay(res.entries.filter(gameEntry), P.chatOwner(c.chatId))); }
         catch (e) { console.warn('summary', e); summaryFailed[c.chatId] = Date.now(); }
         if (screen === 'home') fillGamesList();
       }
@@ -394,7 +515,8 @@
     const seats = [null, null, null, null];
     seats[meC] = { kind: 'human', user: ME || 'me' };
     for (let k = 0; k < n; k++) seats[order[k]] = { kind: 'bot', level: settings.level };
-    startLocal({ seats, rules: settingsRules(settings.rules), first: meC, speed: speedId(settings.anim) }, t('home.quickN', { n }));
+    const qr = settingsRules(settings.rules);
+    startLocal(Object.assign({ seats, rules: qr, first: meC, speed: speedId(settings.anim) }, setStamp(qr)), t('home.quickN', { n }));
   }
 
   function openNewGame(mode) {
@@ -406,6 +528,7 @@
     const rules = settingsRules(settings.rules);
     let first = last && last.first != null ? last.first : 'random';
     let speed = speedId(settings.anim);
+    let agree = settings.agreeRules !== false; // 0.7.0: online – the players may agree on the rules until the first roll
     const kinds = mode === 'online' ? ['me', 'friend', 'bot', 'empty'] : ['me', 'bot', 'local', 'empty'];
     const kindLabel = k => t(k === 'me' ? 'new.seat.me' : k === 'bot' ? 'new.seat.bot' : k === 'local' ? 'new.seat.local' : k === 'friend' ? 'new.seat.friend' : 'new.seat.empty');
     const err = h('div', { class: 'form-error', role: 'alert' });
@@ -413,7 +536,7 @@
 
     function remember() {
       const key = mode === 'online' ? 'lastOnline' : 'lastLocal';
-      set({ [key]: { seats, rules, first, speed }, rules: settingsRules(rules), anim: speed }, { quiet: true });
+      set(Object.assign({ [key]: { seats, rules, first, speed }, rules: settingsRules(rules), anim: speed }, mode === 'online' ? { agreeRules: agree } : {}), { quiet: true });
     }
     function validate() {
       const n = seats.filter(s => s.kind !== 'empty').length;
@@ -438,7 +561,7 @@
           },
         }, k === 'me' ? icon('user') : k === 'bot' ? icon('cpu') : k === 'friend' ? icon('users') : k === 'local' ? icon('device') : null, h('span', null, kindLabel(k)))));
         const extra = h('div', { class: 'seat-extra' });
-        if (s.kind === 'bot') extra.appendChild(h('div', { class: 'seg small' }, ['easy', 'normal', 'hard'].map(l => h('button', { class: 'seg-btn' + ((s.level || 'normal') === l ? ' on' : ''), onclick: () => { s.level = l; drawRows(); remember(); } }, t('level.' + l)))));
+        if (s.kind === 'bot') extra.appendChild(h('div', { class: 'seg small' }, ['easy', 'normal', 'hard'].map(l => h('button', { class: 'seg-btn' + ((s.level || 'normal') === l ? ' on' : ''), title: t('level.' + l + '.about'), onclick: () => { s.level = l; drawRows(); remember(); } }, t('level.' + l)))));
         if (s.kind === 'local') extra.appendChild(h('input', { class: 'text-in', type: 'text', maxlength: '24', value: s.name || '', placeholder: t('new.namePlaceholder') + ' (' + colorName(c) + ')', oninput: e => { s.name = e.target.value; remember(); } }));
         return h('div', { class: 'seat-row' + (s.kind === 'empty' ? ' empty' : '') },
           h('span', { class: 'seat-color' }, chip(c), colorName(c)), seg, extra);
@@ -453,14 +576,17 @@
     const firstSel = segOf(['random', 0, 1, 2, 3], () => first, v => v === 'random' ? t('new.first.random') : h('span', { class: 'chip sm', style: { background: 'var(--p' + v + ')' }, title: colorName(v) }), v => { first = v; });
     const speedSel = segOf(SPEEDS, () => speed, v => t('set.anim.' + v), v => { speed = v; });
 
-    const rulesBox = rulesEditor(rules, () => remember());
+    const rulesSum = h('small', { class: 'muted rules-sum' }, ' – ' + rulesShort(rules).text);
+    const rulesBox = rulesPanel(rules, () => { remember(); rulesSum.textContent = ' – ' + rulesShort(rules).text; });
+    const agreeRow = mode === 'online' ? h('label', { class: 'toggle-row agree-row' }, h('span', null, t('set.agreeRules'), h('small', null, t('set.agreeRules.sub'))),
+      h('span', { class: 'switch' }, h('input', { type: 'checkbox', id: 'new-agree', checked: agree ? true : null, onchange: e => { agree = e.target.checked; remember(); } }), h('span', { class: 'slider' }))) : null;
     const startBtn = h('button', { class: 'btn primary big', onclick: go }, icon(mode === 'online' ? 'users' : 'play'), mode === 'online' ? t('new.invite') : t('new.start'));
     const d = dialog({
       title: mode === 'online' ? t('new.friendsTitle') : t('new.title'), icon: mode === 'online' ? 'users' : 'dice', cls: 'dlg-new',
       body: [h('h3', null, t('new.players')), rows,
         h('div', { class: 'first-row' }, h('span', null, t('new.first')), firstSel, h('span', { class: 'gap' }), h('span', null, t('new.speed')), speedSel),
         mode === 'online' ? h('p', { class: 'hint' }, t('new.friendsHint')) : null,
-        h('details', { class: 'rules-details' }, h('summary', null, t('new.rules'), h('small', { class: 'muted' }, ' – ' + rulesShort(rules).text)), rulesBox), err],
+        h('details', { class: 'rules-details' }, h('summary', null, t('new.rules'), rulesSum), rulesBox), agreeRow, err],
       footer: [h('button', { class: 'btn', onclick: () => d.close() }, t('common.cancel')), startBtn],
     });
     drawRows();
@@ -472,11 +598,11 @@
       if (mode === 'local') {
         const seatsOut = seats.map((s, c) => s.kind === 'empty' ? null : s.kind === 'me' ? { kind: 'human', user: ME || 'me' } : s.kind === 'bot' ? { kind: 'bot', level: s.level || 'normal' } : { kind: 'local', name: (s.name || '').trim() || colorName(c) });
         d.close();
-        startLocal({ seats: seatsOut, rules: R.normalizeRules(rules), first: f == null ? randomFirst(seatsOut) : f, speed }, null);
+        startLocal(Object.assign({ seats: seatsOut, rules: R.normalizeRules(rules), first: f == null ? randomFirst(seatsOut) : f, speed }, setStamp(rules)), null);
       } else {
         startBtn.disabled = true;
         startBtn.lastChild.textContent = t('new.creating');
-        try { await createOnline(seats, R.normalizeRules(rules), f, speed); d.close(); }
+        try { await createOnline(seats, R.normalizeRules(rules), f, speed, agree); d.close(); }
         catch (e) { console.error(e); toast(String(e.message || e), 'bad'); }
         finally { startBtn.disabled = false; startBtn.lastChild.textContent = t('new.invite'); }
       }
@@ -488,9 +614,14 @@
     return a[rollDie() % a.length];
   }
 
-  function rulesEditor(rules, onChange, readOnly) {
+  /** The rule switches, numbered (0.7.0). opts.changed: numbers of rules to mark as just changed. box.redraw() shows
+   *  the rules object again (after a rule set was picked). */
+  function rulesEditor(rules, onChange, readOnly, opts) {
+    opts = opts || {};
     let box = null;
-    const row = (key, control, note) => h('div', { class: 'rule-row', 'data-rule': key }, h('span', null, t('rule.' + key), note ? h('small', { class: 'rule-note' }, note) : null), control);
+    const row = (key, control, note) => h('div', { class: 'rule-row' + ((opts.changed || []).indexOf(R.ruleNo(key)) >= 0 ? ' changed' : ''), 'data-rule': key, 'data-no': String(R.ruleNo(key)) },
+      h('span', { class: 'rule-no', title: t('rule.ref', { n: R.ruleNo(key) }) }, String(R.ruleNo(key))),
+      h('span', { class: 'rule-text' }, t('rule.' + key), note ? h('small', { class: 'rule-note' }, note) : null), control);
     const toggle = (key, locked) => h('label', { class: 'switch' + (readOnly || locked ? ' ro' : '') }, h('input', { type: 'checkbox', id: 'rule-' + key, disabled: readOnly || locked ? true : null, checked: rules[key] ? true : null,
       onchange: e => { rules[key] = e.target.checked; onChange(); if (key === 'onePerSquare') draw(); } }), h('span', { class: 'slider' }));
     const choice = (key, vals) => {
@@ -513,10 +644,59 @@
     }
     box = h('div', { class: 'rules' + (readOnly ? ' read-only' : '') });
     draw();
+    box.redraw = draw;
     return box;
   }
 
-  async function createOnline(seats, rules, first, speed) {
+  /** Rule sets to pick from (built-in and own), with "Save as a set…" and deleting own sets. Picking a set copies its
+   *  rules into `rules` and calls onPick(set). bar.redraw() after the rules were changed elsewhere. */
+  function ruleSetBar(rules, onPick) {
+    const bar = h('div', { class: 'set-bar' });
+    let saving = false, draft = '';
+    function draw() {
+      const sets = allSets();
+      const cur = sets.find(x => sameRules(x.rules, rules));
+      const chips = sets.map(x => h('span', { class: 'set-chip' + (cur && cur.id === x.id ? ' on' : '') + (x.builtIn ? ' builtin' : ''), 'data-set': x.id },
+        h('button', { class: 'set-pick', type: 'button', title: x.note || x.name, onclick: () => { Object.assign(rules, x.rules); draw(); onPick(x); } },
+          cur && cur.id === x.id ? icon('check') : null, h('span', null, x.name)),
+        x.builtIn ? null : h('button', { class: 'set-del', type: 'button', title: t('sets.deleteBtn') + ': ' + x.name, 'aria-label': t('sets.deleteBtn') + ': ' + x.name,
+          onclick: async () => { if (await deleteUserSet(x.id)) draw(); } }, icon('close'))));
+      let save;
+      if (saving) {
+        const input = h('input', { class: 'text-in set-name', type: 'text', maxlength: '40', value: draft, placeholder: t('sets.namePlaceholder'),
+          oninput: e => { draft = e.target.value; }, onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); saving = false; draw(); } } });
+        save = [input, h('button', { class: 'btn small primary', type: 'button', onclick: doSave }, icon('check'), t('sets.save')),
+          h('button', { class: 'btn small ghost', type: 'button', onclick: () => { saving = false; draw(); } }, t('common.cancel'))];
+        setTimeout(() => input.focus(), 0);
+      } else {
+        save = [h('button', { class: 'link-btn small set-save', type: 'button', onclick: () => { saving = true; draft = cur && !cur.builtIn ? cur.name : ''; draw(); } }, icon('plus'), t('sets.saveAs'))];
+      }
+      bar.replaceChildren(h('div', { class: 'set-head' }, h('span', { class: 'set-title' }, t('sets.title')),
+        h('span', { class: 'set-cur muted' }, cur ? '' : t('sets.custom'))),
+        h('div', { class: 'set-chips' }, chips), h('div', { class: 'set-save-row' }, save));
+    }
+    async function doSave() {
+      if (!cleanSetName(draft)) return;
+      if (await saveUserSet(draft, rules)) { saving = false; draft = ''; }
+      draw();
+    }
+    bar.redraw = draw;
+    draw();
+    return bar;
+  }
+
+  /** Rule sets plus the numbered switches, kept in step. */
+  function rulesPanel(rules, onChange, opts) {
+    opts = opts || {};
+    let bar = null;
+    const editor = rulesEditor(rules, () => { if (bar) bar.redraw(); onChange(); }, false, opts);
+    bar = ruleSetBar(rules, () => { editor.redraw(); onChange(); });
+    const box = h('div', { class: 'rules-panel' }, bar, editor, h('p', { class: 'hint small rules-nos' }, t('rules.numbersHint')));
+    box.redraw = () => { bar.redraw(); editor.redraw(); };
+    return box;
+  }
+
+  async function createOnline(seats, rules, first, speed, agree) {
     const friendSeats = seats.map((s, c) => s.kind === 'friend' ? c : -1).filter(c => c >= 0);
     const title = 'Ludo · ' + (ME || 'game');
     const chatId = await Net.createGame(title, friendSeats.length);
@@ -535,7 +715,8 @@
     }
     if (out.filter(Boolean).length < 2) throw new Error(t('new.needTwo'));
     if (members.length < friendSeats.length) toast(t('new.fewerFriends'), 'warn', 5000);
-    const setup = P.msg('setup', { g: P.randomId(8), seats: out, rules, first: first == null ? randomFirst(out) : first, speed: speedId(speed), round: 1 }, VERSION);
+    const setup = P.msg('setup', Object.assign({ g: P.randomId(8), seats: out, rules, first: first == null ? randomFirst(out) : first, speed: speedId(speed), round: 1 },
+      setStamp(rules), agree ? { agree: true } : {}), VERSION);
     await Net.send(chatId, P.encode(setup));
     onlineList = null;
     await openOnline(chatId, { title, initial: [{ author: ME, text: P.encode(setup), type: 'Application' }] });
@@ -563,6 +744,12 @@
     return d;
   }
 
+  /** 0.7.0: what the computer levels do (Settings → Play). */
+  function levelsInfo() {
+    return h('div', { class: 'levels-info' }, ['easy', 'normal', 'hard'].map(l => h('div', { class: 'lv lv-' + l + (settings.level === l ? ' on' : '') },
+      h('b', null, icon('cpu'), t('level.' + l)), h('span', null, t('level.' + l + '.about')))));
+  }
+
   function sectionBody(sec, redraw) {
     const inGame = screen === 'game' && !!game;
     const field = (label, control, sub) => h('div', { class: 'field' }, h('div', { class: 'field-label' }, label, sub ? h('small', null, sub) : null), control);
@@ -586,18 +773,23 @@
     }
     if (sec === 'play') {
       return [toggle('autoMove', t('set.autoMove')), toggle('autoRoll', t('set.autoRoll')), toggle('hints', t('set.hints')), toggle('confirmLeave', t('set.confirmLeave')),
-        field(t('set.level'), seg('level', ['easy', 'normal', 'hard'], v => t('level.' + v)))];
+        toggle('agreeRules', t('set.agreeRules'), false, t('set.agreeRules.sub')),
+        field(t('set.level'), seg('level', ['easy', 'normal', 'hard'], v => t('level.' + v)), t('set.level.sub')), levelsInfo()];
     }
     if (sec === 'sound') {
       const vol = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(settings.volume * 100)), class: 'range', oninput: e => set({ volume: e.target.value / 100 }, { quiet: true }), onchange: () => Sound.play('capture') });
       return [toggle('sound', t('set.sound')), field(t('set.volume'), h('div', { class: 'vol-row' }, vol, h('button', { class: 'btn small', onclick: () => Sound.play('win') }, icon('play'), t('set.test')), h('button', { class: 'btn small', id: 'btn-test-chat', onclick: () => Sound.play('chat') }, icon('chat'), t('set.testChat'))))];
     }
     if (sec === 'rules') {
-      if (inGame && game.currentRules) {
-        return [h('h4', { class: 'sub-head' }, t('set.gameRules')), rulesEditor(Object.assign({}, game.currentRules()), () => {}, true), lockNote()];
+      if (inGame && game.currentRules && game.currentRules()) {
+        const open = game.canChangeRules && game.canChangeRules();
+        return [h('h4', { class: 'sub-head' }, t('set.gameRules'), h('span', { class: 'muted' }, ' · ' + rulesShort(game.currentRules(), game.currentSetup()).text)),
+          rulesEditor(Object.assign({}, game.currentRules()), () => {}, true),
+          open ? h('div', { class: 'lock-note open' }, icon('flag'), h('span', null, t('game.rulesOpenHost')), h('button', { class: 'btn small', id: 'btn-set-change-rules', onclick: () => game.openChangeRules() }, t('game.changeRules')))
+            : h('p', { class: 'lock-note' }, icon('flag'), t('game.rulesLockedHint'))];
       }
       const rules = Object.assign({}, settings.rules);
-      return [h('p', { class: 'hint' }, t('set.rulesHint')), rulesEditor(rules, () => set({ rules: settingsRules(rules) }, { quiet: true }))];
+      return [h('p', { class: 'hint' }, t('set.rulesHint')), rulesPanel(rules, () => set({ rules: settingsRules(rules) }, { quiet: true }))];
     }
     return [h('div', { class: 'about' },
       h('div', { class: 'about-logo' }, h('span', { class: 'brand-name big' }, 'Ludo', h('b', null, '4'), 'Peergos'), h('div', { class: 'muted' }, t('set.version', { v: VERSION }))),
@@ -613,37 +805,50 @@
       } }, t('set.reset')))];
   }
 
-  /** "How to play" written from a concrete set of rules, so everyone reads the rules that really apply. */
-  function rulesHelpHtml(rules) {
-    const r = R.normalizeRules(rules);
+  /** "How to play" written from a concrete set of rules, so everyone reads the rules that really apply – numbered
+   *  (0.7.0), so players can refer to a rule ("rule 2"). changed: numbers to mark as just changed. */
+  function rulesHelpHtml(rules, changed) {
+    const r = R.normalizeRules(rules), ch = changed || [];
     const enter = t('help.enter.' + r.enterOn);
-    const li = [];
-    li.push(t(r.sixBonus ? 'help.sixBonus.on' : 'help.sixBonus.off'));
-    if (r.sixBonus) li.push(t(r.threeSixes ? 'help.threeSixes.on' : 'help.threeSixes.off'));
-    li.push(t('help.capture') + t(r.captureBonus ? 'help.capture.bonus' : 'help.capture.noBonus'));
+    const items = [];
+    const add = (k, html) => items.push([R.ruleNo(k), html]);
+    add('enterOn', t('help.enterRule', { enter }));
+    add('mustEnter', r.mustEnter ? t('help.mustEnter.on') + (r.onePerSquare && r.enterGrace ? ' ' + t('help.mustEnter.grace') : '') : t('help.mustEnter.off'));
+    add('threeTries', t(r.threeTries ? 'help.threeTries.on' : 'help.threeTries.off', { enter }));
+    add('sixBonus', t(r.sixBonus ? 'help.sixBonus.on' : 'help.sixBonus.off'));
+    add('threeSixes', r.sixBonus ? t(r.threeSixes ? 'help.threeSixes.on' : 'help.threeSixes.off') : t('help.threeSixes.na'));
+    add('captureBonus', t('help.capture') + t(r.captureBonus ? 'help.capture.bonus' : 'help.capture.noBonus'));
+    add('finishBonus', t(r.finishBonus ? 'help.finishBonus.on' : 'help.finishBonus.off') + ' ' + t('help.exact'));
     if (r.onePerSquare && r.protectOwn) {
-      li.push(t(r.safeBlock ? 'help.onePer.protect2' : 'help.onePer.protect') + (r.mustEnter ? ' ' + t('help.onePer.protectExcept') : ''));
-      if (r.safeBlock) li.push(t(r.safeSquares ? 'help.safe.onePer' : 'help.safe.off'));
+      add('onePerSquare', t(r.safeBlock ? 'help.onePer.protect2' : 'help.onePer.protect') + (r.mustEnter ? ' ' + t('help.onePer.protectExcept') : ''));
+      add('safeSquares', t(r.safeBlock && r.safeSquares ? 'help.safe.onePer' : 'help.safe.off'));
+    } else if (r.onePerSquare) {
+      add('onePerSquare', t('help.onePer.on'));
+      add('safeSquares', t('help.safe.off'));
+    } else {
+      add(r.selfKick ? 'selfKick' : 'onePerSquare', t(r.selfKick ? 'help.selfKick.on' : 'help.onePer.off'));
+      add('safeSquares', t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
     }
-    else if (r.onePerSquare) li.push(t('help.onePer.on'));
-    else {
-      li.push(t(r.safeSquares ? 'help.safe.on' : 'help.safe.off'));
-      li.push(t(r.selfKick ? 'help.selfKick.on' : 'help.onePer.off'));
-    }
-    li.push(t(r.finishBonus ? 'help.finishBonus.on' : 'help.finishBonus.off') + ' ' + t('help.exact'));
-    li.push(t(r.threeTries ? 'help.threeTries.on' : 'help.threeTries.off', { enter }));
-    if (r.mustEnter) li.push(t('help.mustEnter.on') + (r.onePerSquare && r.enterGrace ? ' ' + t('help.mustEnter.grace') : ''));
-    li.push(t(r.endMode === 'all' ? 'help.end.all' : 'help.end.first'));
-    return '<p>' + t('help.intro', { enter }) + '</p><ul class="help-rules">' + li.map(x => '<li>' + x + '</li>').join('') + '</ul>';
+    add('endMode', t(r.endMode === 'all' ? 'help.end.all' : 'help.end.first'));
+    items.sort((a, b) => a[0] - b[0]);
+    const li = ([no, x]) => '<li data-no="' + no + '"' + (ch.indexOf(no) >= 0 ? ' class="changed"' : '') + '><span class="rule-no">' + no + '</span><span>' + x +
+      (ch.indexOf(no) >= 0 ? ' <em class="changed-tag">' + t('help.changed') + '</em>' : '') + '</span></li>';
+    return '<p>' + t('help.intro', { enter }) + '</p><ol class="help-rules">' + items.map(li).join('') + '</ol>';
   }
 
-  function openHelp() {
-    const inGame = screen === 'game' && game && game.currentRules && game.currentRules();
-    const rules = inGame ? game.currentRules() : settings.rules;
-    const head = h('div', { class: 'help-head' + (inGame ? ' game' : '') }, icon(inGame ? 'flag' : 'gear'),
-      h('b', null, t(inGame ? 'help.forGame' : 'help.forNew')),
+  /** opts (optional): {rules, setup, changed, title} – e.g. the rules a chat line talks about. */
+  function openHelp(opts) {
+    opts = opts && opts.rules ? opts : null;
+    const inGame = !opts && screen === 'game' && game && game.currentRules && game.currentRules();
+    const rules = opts ? opts.rules : inGame ? game.currentRules() : settings.rules;
+    const setup = opts ? opts.setup : inGame ? game.currentSetup() : setStamp(settings.rules);
+    const name = rulesShort(rules, setup).name;
+    const head = h('div', { class: 'help-head' + (inGame || opts ? ' game' : '') }, icon(inGame || opts ? 'flag' : 'gear'),
+      h('b', null, opts && opts.title ? opts.title : t(inGame ? 'help.forGame' : 'help.forNew')),
+      name ? h('span', { class: 'help-set' }, ' · ' + name) : null,
       inGame ? h('span', { class: 'muted' }, ' · ' + t('help.speedRound', { speed: t('set.anim.' + game.speedId), round: game.roundNo() })) : null);
-    dialog({ title: t('help.title'), icon: 'help', cls: 'dlg-help', body: [head, h('div', { class: 'help', id: 'help-rules', html: rulesHelpHtml(rules) }), h('div', { class: 'help help-common', html: t('help.common') })] });
+    dialog({ title: t('help.title'), icon: 'help', cls: 'dlg-help', body: [head, h('div', { class: 'help', id: 'help-rules', html: rulesHelpHtml(rules, opts && opts.changed) }),
+      h('div', { class: 'help help-common', html: t('help.common') })] });
   }
 
   // ───────────────────────────── User notes ─────────────────────────────
@@ -784,13 +989,16 @@
     const self = {
       mode: sess.mode, sess, phase: 'loading', state: null, shownN: -1, roll: null, legal: [],
       busy: false, stopped: false, pollTimer: null, outbox: null, joined: new Set(), invited: new Set(),
-      winnerShown: false, lastChange: 0, unknown: 0, prevTurn: null, seq: 0, sentRoundFor: new Set(),
+      winnerShown: false, lastChange: 0, unknown: 0, prevTurn: null, seq: 0, sentRoundFor: new Set(), started: new Set(), infoKey: '',
       speedId: speedId(online ? settings.anim : sess.rec.setup.speed),
       stop, refresh,
     };
     const sp = () => SPEED[self.speedId] || SPEED.normal;
     self.roundNo = () => roundNo();
     self.currentRules = () => (online ? (self.replay && self.replay.setup ? R.normalizeRules(self.replay.setup.rules) : null) : R.normalizeRules(sess.rec.setup.rules));
+    self.currentSetup = () => currentSetup();
+    self.canChangeRules = () => canChangeRules();
+    self.openChangeRules = pre => openChangeRules(pre);
 
     function stop() {
       self.stopped = true;
@@ -818,6 +1026,140 @@
     function currentSetup() { return online ? (self.replay && self.replay.setup) : sess.rec.setup; }
     function iLeft() { return !!(online && self.replay && self.replay.left && self.replay.left.indexOf(ME) >= 0); }
     function hostGone() { return !!(online && self.replay && self.replay.hostLeft); }
+    /** The current game (round): its setup id online, the round number locally. */
+    function gameId() { const s0 = currentSetup(); return online ? (s0 ? s0.g : '') : 'r' + (sess.rec.round || 1); }
+
+    // ── 0.7.0: the rules stay open until the first roll. Then the host (online) or the player (local game) may change
+    // them; with "let players agree on the rules" (setup.agree) the other players can agree, disagree or suggest rules.
+    function rulesOpen() {
+      const st = self.state, s0 = currentSetup();
+      if (!st || !s0 || st.over || st.n !== 0) return false;
+      if (['rolling', 'pick', 'anim', 'bot', 'over', 'ended'].indexOf(self.phase) >= 0) return false;
+      if (!online) return true;
+      return !!self.replay && self.replay.history.length === 0 && !hostGone() && !iLeft();
+    }
+    function canChangeRules() { return rulesOpen() && (!online || sess.host === ME); }
+    function negotiating() { const s0 = currentSetup(); return online && !!s0 && s0.agree === true && rulesOpen(); }
+    const amPlayer = () => !!self.state && self.state.seats.some(x => x && x.kind === 'human' && x.user === ME);
+    /** Players who can agree on the rules: the human players other than the host (who decides), not gone. */
+    function voters() {
+      const s0 = currentSetup();
+      if (!s0) return [];
+      const out = [];
+      s0.seats.forEach(x => { if (x && x.kind === 'human' && x.user && x.user !== sess.host && (self.replay.left || []).indexOf(x.user) < 0 && out.indexOf(x.user) < 0) out.push(x.user); });
+      return out;
+    }
+    /** The computer begins and the players may still talk about the rules: the host starts the game with the die. */
+    function needsStart(st) {
+      const s0 = currentSetup();
+      return online && !!s0 && st.n === 0 && sess.host === ME && s0.agree === true && !self.started.has(s0.g) && !hostGone() &&
+        s0.seats.some(x => x && x.kind === 'human' && x.user !== ME);
+    }
+    function startGame() {
+      if (self.phase !== 'start' || self.busy) return;
+      const s0 = currentSetup();
+      if (s0) self.started.add(s0.g);
+      clearTimeout(nextTimer);
+      self.phase = 'bot';
+      updateStatus();
+      botTurn();
+    }
+
+    function openChangeRules(pre) {
+      if (!canChangeRules()) { toast(t('game.rulesTooLate'), 'warn', 4000); return; }
+      const s0 = currentSetup();
+      const rules = settingsRules(Object.assign({}, R.normalizeRules(s0.rules), pre && pre.rules ? pre.rules : {}));
+      const panel = rulesPanel(rules, () => {});
+      const hintKey = !online ? 'game.changeRulesHintLocal' : s0.agree ? 'game.changeRulesHintAgree' : 'game.changeRulesHint';
+      const d = dialog({ title: t('game.changeRules'), icon: 'flag', cls: 'dlg-rules',
+        body: [h('p', { class: 'hint' }, t(hintKey)), panel],
+        footer: [h('button', { class: 'btn', onclick: () => d.close() }, t('common.cancel')),
+          h('button', { class: 'btn primary', id: 'btn-apply-rules', onclick: async () => { if (await applyRules(rules)) d.close(); } }, icon('check'), t('game.rulesApply'))] });
+    }
+    /** Replaces the game's rules (only before the first roll). Online the host sends a new setup of the same round that
+     *  `replaces` the old one (see Protocol.replay); a local game just gets the new rules. */
+    async function applyRules(rules) {
+      if (!canChangeRules()) { toast(t('game.rulesTooLate'), 'warn', 4000); return true; }
+      const s0 = currentSetup();
+      const changed = changedNos(s0.rules, rules);
+      if (!changed.length) { toast(t('game.rulesSame'), 'info', 2500); return true; }
+      const stamp = setStamp(rules);
+      if (!online) {
+        const rec = sess.rec;
+        const ns = Object.assign({}, rec.setup, { rules: R.normalizeRules(rules) });
+        delete ns.rulesSet; delete ns.rulesName;
+        rec.setup = Object.assign(ns, stamp);
+        rec.updated = Date.now();
+        saveLocalGames();
+        toast(t('game.rulesChangedYou', { list: changed.join(', ') }), 'ok', 4000);
+        openLocal(rec.id);
+        return true;
+      }
+      const fields = { g: P.randomId(8), seats: s0.seats, rules: R.normalizeRules(rules), speed: s0.speed || self.speedId, first: s0.first,
+        round: Number.isInteger(s0.round) ? s0.round : roundNo(), replaces: s0.g };
+      if (s0.ask) fields.ask = s0.ask;
+      if (s0.agree) fields.agree = true;
+      pushOwn(P.msg('setup', Object.assign(fields, stamp), VERSION));
+      toast(t('game.rulesChangedYou', { list: changed.join(', ') }), 'ok', 4000);
+      self.replay = null;
+      await integrate();
+      return true;
+    }
+    function sendVote(yes) {
+      if (!negotiating() || !amPlayer() || sess.host === ME) return;
+      pushOwn(P.msg('say', { g: self.replay.setup.g, text: t(yes ? 'game.agreeText' : 'game.disagreeText'), rulesOk: !!yes }, VERSION));
+      drawChat(); drawPlayers(); drawInfo();
+    }
+    function openSuggest() {
+      if (!negotiating() || !amPlayer()) return;
+      const s0 = currentSetup();
+      const rules = settingsRules(Object.assign({}, R.normalizeRules(s0.rules)));
+      const panel = rulesPanel(rules, () => {});
+      const d = dialog({ title: t('game.suggestTitle'), icon: 'chat', cls: 'dlg-rules',
+        body: [h('p', { class: 'hint' }, t('game.suggestHint')), panel],
+        footer: [h('button', { class: 'btn', onclick: () => d.close() }, t('common.cancel')),
+          h('button', { class: 'btn primary', id: 'btn-send-suggest', onclick: () => {
+            if (!negotiating()) { toast(t('game.rulesTooLate'), 'warn', 4000); d.close(); return; }
+            const changed = changedNos(currentSetup().rules, rules);
+            if (!changed.length) { toast(t('game.rulesSame'), 'info', 2500); return; }
+            const stamp = setStamp(rules);
+            const name = setNameOf(rules, stamp);
+            const text = name ? t('game.suggestNamed', { name, list: changed.join(', ') }) : t('game.suggestText', { list: changed.join(', ') });
+            pushOwn(P.msg('say', { g: self.replay.setup.g, text, offer: Object.assign({ rules: visibleRules(rules) }, stamp) }, VERSION));
+            drawChat();
+            d.close();
+          } }, icon('send'), t('game.suggestSend'))] });
+    }
+    /** The rules part of "This game": open for changes (host / local), or agree / disagree / suggest (other players). */
+    function rulesBar() {
+      if (!self.state || !currentSetup()) return null;
+      if (canChangeRules()) {
+        const kids = [h('span', { class: 'rb-text' }, t('game.rulesOpenHost'))];
+        if (negotiating()) {
+          const vs = voters(), v = self.replay.votes || {};
+          const yes = vs.filter(u => v[u] === true).length, no = vs.filter(u => v[u] === false);
+          if (vs.length) kids.push(h('span', { class: 'rb-votes' + (yes === vs.length ? ' ok' : no.length ? ' warn' : '') },
+            yes === vs.length ? t('game.allAgree') : no.length ? t('game.someDisagree', { names: no.join(', ') }) : t('game.votesSummary', { yes, n: vs.length })));
+        }
+        kids.push(h('button', { class: 'btn small', id: 'btn-change-rules', onclick: () => openChangeRules() }, icon('flag'), t('game.changeRules')));
+        return h('div', { class: 'rules-open host' }, kids);
+      }
+      if (negotiating() && amPlayer()) {
+        const mine = (self.replay.votes || {})[ME];
+        return h('div', { class: 'rules-open guest' }, h('span', { class: 'rb-text' }, t('game.rulesOpenGuest')),
+          h('div', { class: 'vote-btns' },
+            h('button', { class: 'btn small vote yes' + (mine === true ? ' on' : ''), id: 'btn-rules-agree', onclick: () => sendVote(true) }, icon('check'), t('game.agree')),
+            h('button', { class: 'btn small vote no' + (mine === false ? ' on' : ''), id: 'btn-rules-disagree', onclick: () => sendVote(false) }, icon('close'), t('game.disagree')),
+            h('button', { class: 'btn small ghost', id: 'btn-rules-suggest', onclick: openSuggest }, icon('chat'), t('game.suggest'))));
+      }
+      return null;
+    }
+    /** Redraws "This game" when what it shows about the rules changed (open / locked, votes). */
+    function syncInfo() {
+      const s0 = currentSetup();
+      const key = [s0 ? s0.g || '' : '', canChangeRules(), negotiating(), JSON.stringify((self.replay && self.replay.votes) || {}), self.state ? self.state.n : -1].join('|');
+      if (key !== self.infoKey) drawInfo();
+    }
     function roundNo() { return online ? (self.replay && self.replay.rounds.length ? self.replay.rounds[self.replay.rounds.length - 1].round : 1) : (sess.rec.round || 1); }
     function winsTally() {
       const wins = [0, 0, 0, 0];
@@ -840,7 +1182,12 @@
           if (seat.kind === 'human' && seat.user === self.sess.host) badges.push(h('span', { class: 'badge' }, t('game.host')));
           if (seat.kind === 'human' && seat.user !== ME && seat.user !== self.sess.host && !self.joined.has(seat.user)) badges.push(h('span', { class: 'badge warn', title: t('game.notJoined', { name: seat.user }) }, t('game.invited')));
         }
-        if (seat.kind === 'bot') badges.push(h('span', { class: 'badge' }, icon('cpu')));
+        if (seat.kind === 'bot') badges.push(h('span', { class: 'badge', title: t('level.' + (seat.level || 'normal') + '.about') }, icon('cpu'), t('level.' + (seat.level || 'normal'))));
+        if (online && seat.kind === 'human' && seat.user !== self.sess.host && negotiating()) {
+          const v = (self.replay.votes || {})[seat.user];
+          if (v === true) badges.push(h('span', { class: 'badge ok vote-badge', title: t('game.agrees') }, icon('check'), t('game.agrees')));
+          else if (v === false) badges.push(h('span', { class: 'badge warn vote-badge', title: t('game.disagrees') }, icon('close'), t('game.disagrees')));
+        }
         const pct = Math.round(R.progress(st, c) * 100);
         const active = st.turn === c && !st.over && !hostGone();
         return h('div', { class: 'player' + (active ? ' active' : '') + (place >= 0 ? ' done' : ''), style: { '--c': 'var(--p' + c + ')' } },
@@ -850,13 +1197,16 @@
             place >= 0 ? h('span', { class: 'medal m' + (place + 1) }, String(place + 1)) : h('span', { class: 'pl-home', title: 'home' }, st.tokens[c].filter(p => p === R.FINISH).length + '/4')),
           active ? h('span', { class: 'pl-turn' }, '▶') : null);
       }));
+      syncInfo();
     }
     function drawInfo() {
       const setup = currentSetup();
+      self.infoKey = [setup ? setup.g || '' : '', canChangeRules(), negotiating(), JSON.stringify((self.replay && self.replay.votes) || {}), self.state ? self.state.n : -1].join('|');
       if (!setup) { infoBox.replaceChildren(); return; }
       infoBox.replaceChildren(h('div', { class: 'panel-head' }, icon('flag'), h('span', null, t('game.info')), h('span', { class: 'round-tag' }, t('game.roundN', { n: roundNo() })),
-        h('button', { class: 'link-btn small', id: 'btn-game-rules', onclick: openHelp, title: t('help.forGame') }, icon('help'), t('new.rules'))),
-        summaryEl({ seats: setup.seats, rules: setup.rules, speed: self.speedId, round: 1, wins: [0, 0, 0, 0] }, { compact: true }));
+        h('button', { class: 'link-btn small', id: 'btn-game-rules', onclick: () => openHelp(), title: t('help.forGame') }, icon('help'), t('new.rules'))),
+        summaryEl({ seats: setup.seats, rules: setup.rules, rulesSet: setup.rulesSet, rulesName: setup.rulesName, speed: self.speedId, round: 1, wins: [0, 0, 0, 0] }, { compact: true }),
+        ...[rulesBar()].filter(Boolean)); // never hand null to replaceChildren (it shows "null")
     }
     function drawActions() {
       const btns = [];
@@ -874,10 +1224,31 @@
       actionsEl.replaceChildren(...btns);
     }
     function logRound(n) { log.appendChild(h('li', { class: 'round-sep' }, t('game.roundN', { n }))); }
-    function addLog(text, color) {
-      log.appendChild(h('li', { style: color != null ? { '--c': 'var(--p' + color + ')' } : null }, text));
+    /** mv (optional): {color, token, from, to} – pointing at the line (or tapping it) shows that move on the board. */
+    function addLog(text, color, mv) {
+      const li = h('li', { style: color != null ? { '--c': 'var(--p' + color + ')' } : null }, text);
+      if (mv) {
+        li.classList.add('has-move');
+        li.tabIndex = 0;
+        li.title = t('log.showHint');
+        const on = () => { log.querySelectorAll('li.picked').forEach(x => x.classList.remove('picked')); li.classList.add('picked'); board.highlight(mv); };
+        const off = () => { li.classList.remove('picked'); board.highlight(null); };
+        li.addEventListener('mouseenter', on); li.addEventListener('mouseleave', off);
+        li.addEventListener('focus', on); li.addEventListener('blur', off);
+        li.addEventListener('click', () => { if (li.classList.contains('picked') && document.activeElement !== li) off(); else on(); });
+      }
+      log.appendChild(li);
       while (log.children.length > 300) log.firstChild.remove();
       log.scrollTop = log.scrollHeight;
+    }
+    /** What a move did, in words (0.7.0 – the tokens carry no numbers on the board). */
+    function moveText(ev) {
+      if (ev.from < 0) return t('log.out');
+      if (ev.to === R.FINISH) return t('log.home');
+      if (ev.to > R.LAST_TRACK && ev.from <= R.LAST_TRACK) return t('log.column', { n: ev.to - ev.from });
+      if (ev.to > R.LAST_TRACK) return t('log.inColumn', { n: ev.to - ev.from });
+      const n = ev.to - ev.from;
+      return t(n === 1 ? 'log.moved1' : n < 5 ? 'log.moved24' : 'log.moved', { n });
     }
     function drawChat() {
       if (!online) return;
@@ -885,10 +1256,34 @@
       chatList.replaceChildren(...tl.slice(-150).map(s => {
         if (s.kind === 'round') return h('div', { class: 'chat-round' }, h('span', null, t('game.roundN', { n: s.round })));
         if (s.kind === 'left') return h('div', { class: 'chat-sys' }, icon('exit'), h('span', null, t(s.host ? 'game.hostLeftLine' : 'game.leftLine', { name: s.author === ME ? t('common.you') : s.author })));
+        if (s.kind === 'rules') return rulesLine(s);
         const c = self.state ? self.state.seats.findIndex(x => x && x.user === s.author) : -1;
-        return h('div', { class: 'say' + (s.author === ME ? ' me' : ''), style: c >= 0 ? { '--c': 'var(--p' + c + ')' } : null }, h('b', null, s.author === ME ? t('common.you') : s.author), h('span', null, s.text));
+        return h('div', { class: 'say' + (s.author === ME ? ' me' : '') + (typeof s.rulesOk === 'boolean' ? (s.rulesOk ? ' vote-yes' : ' vote-no') : '') + (s.offer ? ' offer' : ''), style: c >= 0 ? { '--c': 'var(--p' + c + ')' } : null },
+          h('b', null, s.author === ME ? t('common.you') : s.author), h('span', null, s.text), s.offer ? offerButtons(s) : null);
       }));
       chatList.scrollTop = chatList.scrollHeight;
+    }
+    const haveSet = rules => allSets().some(x => sameRules(x.rules, rules));
+    /** Chat line: the host changed the rules before the first roll – which numbers, and the set's name. */
+    function rulesLine(s) {
+      const st = ((self.replay && self.replay.setups) || []).find(x => x.g === s.g);
+      const nm = st ? rulesShort(st.rules, st).name : '';
+      const who = s.author === ME ? t('common.you') : s.author;
+      const list = (s.changed || []).join(', ');
+      return h('div', { class: 'chat-sys rules-line' }, icon('flag'),
+        h('span', null, nm ? t('game.rulesSetLine', { name: who, set: nm, list }) : t('game.rulesLine', { name: who, list })),
+        st ? h('button', { class: 'link-btn small', onclick: () => openHelp({ rules: st.rules, setup: st, changed: s.changed, title: t('help.changedTitle') }) }, t('game.rulesShow')) : null,
+        st && st.rulesName && s.author !== ME && !haveSet(st.rules) ? h('button', { class: 'link-btn small', onclick: async () => { if (await saveUserSet(st.rulesName, st.rules)) drawChat(); } }, icon('plus'), t('game.saveSet')) : null);
+    }
+    /** Buttons under a suggested rule set: show it, use it (the host, before the first roll), save it (named sets). */
+    function offerButtons(s) {
+      const rules = rulesOfSet(s.offer);
+      const s0 = currentSetup();
+      const name = cleanSetName(s.offer.rulesName);
+      return h('span', { class: 'offer-btns' },
+        h('button', { class: 'link-btn small', onclick: () => openHelp({ rules, setup: s.offer, changed: s0 ? changedNos(s0.rules, rules) : [], title: t('help.offerTitle', { name: s.author }) }) }, t('game.rulesShow')),
+        canChangeRules() && s.author !== ME && s0 && !sameRules(s0.rules, rules) ? h('button', { class: 'link-btn small use-offer', onclick: () => openChangeRules({ rules: visibleRules(rules) }) }, icon('check'), t('game.useSuggestion')) : null,
+        name && s.author !== ME && !haveSet(rules) ? h('button', { class: 'link-btn small', onclick: async () => { if (await saveUserSet(name, rules)) drawChat(); } }, icon('plus'), t('game.saveSet')) : null);
     }
     function drawRestart() {
       const rs = online && self.replay ? self.replay.restart : null;
@@ -926,8 +1321,9 @@
     function updateStatus() {
       const st = self.state;
       hint.textContent = '';
-      dieEl.wrap.classList.toggle('ready', self.phase === 'roll');
-      diceArea.classList.toggle('my-turn', self.phase === 'roll' || self.phase === 'pick');
+      dieEl.wrap.classList.toggle('ready', self.phase === 'roll' || self.phase === 'start');
+      diceArea.classList.toggle('my-turn', self.phase === 'roll' || self.phase === 'pick' || self.phase === 'start');
+      syncInfo();
       if (!st) { status.textContent = '…'; board.setActive(-1); return; }
       const c = st.turn;
       board.setActive(st.over ? -1 : c);
@@ -936,7 +1332,10 @@
       if (hostGone()) { status.textContent = t('game.hostLeftStatus', { name: self.sess.host === ME ? t('common.you') : self.sess.host }); hint.textContent = t('game.endedHint'); board.setActive(-1); return; }
       if (iLeft()) hint.textContent = t('game.youLeftHint');
       const ctl = controlOf(st, c);
-      if (self.phase === 'roll') {
+      if (self.phase === 'start') {
+        status.textContent = t('game.begins', { name: nameOf(c) });
+        hint.textContent = t('game.startHint');
+      } else if (self.phase === 'roll') {
         status.textContent = st.seats[c].kind === 'local' ? t('game.turnOf', { name: nameOf(c) }) : t('game.yourTurn');
         hint.textContent = t('game.rollHint');
       } else if (self.phase === 'pick') {
@@ -944,9 +1343,10 @@
       } else if (ctl === 'remote') {
         const seat = st.seats[c];
         const ctrl = self.replay.controller(c, st.n);
-        if (seat.kind === 'bot' || ctrl !== seat.user) status.textContent = t('game.waitingHost', { name: ctrl });
+        if (seat.kind === 'bot' || ctrl !== seat.user) { status.textContent = t('game.waitingHost', { name: ctrl }); hint.textContent = t('game.waitingHostHint', { name: ctrl }); }
         else status.textContent = t('game.waitingFor', { name: nameOf(c) });
         if (seat.kind === 'human' && seat.user !== self.sess.host && !self.joined.has(seat.user)) hint.textContent = t('game.notJoined', { name: seat.user });
+        else if (st.n === 0 && negotiating() && ctrl === self.sess.host) hint.textContent = t('game.hostStarts');
       } else if (self.phase === 'banner' && ctl === 'me') {
         status.textContent = st.seats[c].kind === 'local' ? t('game.turnOf', { name: nameOf(c) }) : t('game.yourTurn');
       } else if (self.phase === 'bot' || self.phase === 'banner') {
@@ -981,7 +1381,7 @@
     // ── state changes
     function eventsToLog(action, events, by) {
       for (const ev of events) {
-        if (ev.type === 'move') addLog(t('game.rolled', { name: nameOf(by), roll: action.r }) + ' → ' + (ev.from < 0 ? '⬆' : '') + ' #' + (ev.token + 1), by);
+        if (ev.type === 'move') addLog(t('game.rolled', { name: nameOf(by), roll: action.r }) + ' – ' + moveText(ev), by, { color: ev.color, token: ev.token, from: ev.from, to: ev.to });
         else if (ev.type === 'pass') addLog(t('game.rolled', { name: nameOf(by), roll: action.r }) + ' – ' + t('game.noMove').toLowerCase(), by);
         else if (ev.type === 'threeSixes') addLog(t('game.threeSixes'), by);
         else if (ev.type === 'capture') addLog(t('game.captured', { a: nameOf(ev.color), b: nameOf(ev.victim) }), ev.color);
@@ -1086,6 +1486,11 @@
         self.phase = 'roll';
         updateStatus();
         if (settings.autoRoll) nextTimer = setTimeout(() => userRoll(), sp().think);
+      } else if (ctl === 'bot' && needsStart(st)) {
+        // 0.7.0: the players may still talk about the rules – the host starts the game (the first roll locks the rules)
+        self.phase = 'start';
+        updateStatus();
+        if (settings.autoRoll) nextTimer = setTimeout(startGame, sp().think);
       } else if (ctl === 'bot') {
         self.phase = 'bot';
         updateStatus();
@@ -1099,28 +1504,30 @@
     async function botTurn() {
       if (self.stopped || self.busy || !self.state || self.state.over) return;
       if (controlOf(self.state, self.state.turn) !== 'bot') return next();
-      const st = self.state;
+      const st = self.state, g0 = gameId();
       const r = rollDie();
       self.busy = true;
       await dieEl.roll(r, st.turn, sp().dice);
       self.busy = false;
-      if (self.stopped || !samePosition(self.state, st)) return;
+      if (self.stopped || !samePosition(self.state, st) || gameId() !== g0) return;
       const tk = AI.choose(st, r, st.seats[st.turn].level || 'normal');
       if (tk === -1) await sleep(Math.round(sp().pause * 0.6));
       await commit({ r, t: tk });
     }
 
     async function userRoll() {
+      if (self.phase === 'start' && !self.busy) { Sound.unlock(); startGame(); return; }
       if (self.phase !== 'roll' || self.busy || hostGone()) return;
       Sound.unlock();
-      const st = self.state;
+      const st = self.state, g0 = gameId();
       const r = rollDie();
       self.busy = true;
       self.phase = 'rolling';
       updateStatus();
       await dieEl.roll(r, st.turn, sp().dice);
       self.busy = false;
-      if (self.stopped || !samePosition(self.state, st)) return;
+      // 0.7.0: the host may have changed the rules meanwhile (a new game of the same round, same position)
+      if (self.stopped || !samePosition(self.state, st) || gameId() !== g0) return;
       const legal = R.legalMoves(st, r);
       self.roll = r; self.legal = legal;
       // make the rule visible when it decides the move
@@ -1167,7 +1574,7 @@
     // keyboard
     self.key = e => {
       if (self.stopped) return;
-      if (e.key === ' ' || e.key === 'Enter') { if (self.phase === 'roll') { e.preventDefault(); userRoll(); } }
+      if (e.key === ' ' || e.key === 'Enter') { if (self.phase === 'roll' || self.phase === 'start') { e.preventDefault(); userRoll(); } }
       else if (/^[1-4]$/.test(e.key) && self.phase === 'pick') { const i = +e.key - 1; if (self.legal.indexOf(i) >= 0) commit({ r: self.roll, t: i }); }
     };
 
@@ -1207,7 +1614,11 @@
       const s = rep.setup;
       // players who left the game are replaced by computer players (the host's app runs them)
       const seats = s.seats.map(seat => seat && seat.kind === 'human' && (rep.left || []).indexOf(seat.user) >= 0 ? { kind: 'bot', level: settings.level } : seat);
-      pushOwn(P.msg('setup', { g: P.randomId(8), seats, rules: s.rules, speed: s.speed || self.speedId, first: randomFirst(s.seats), round: roundNo() + 1, ask: id }, VERSION));
+      const keep = {};
+      if (s.agree) keep.agree = true; // 0.7.0: the new round keeps "let players agree on the rules" and the rule set's name
+      if (typeof s.rulesSet === 'string') keep.rulesSet = s.rulesSet;
+      if (cleanSetName(s.rulesName)) keep.rulesName = cleanSetName(s.rulesName);
+      pushOwn(P.msg('setup', Object.assign({ g: P.randomId(8), seats, rules: s.rules, speed: s.speed || self.speedId, first: randomFirst(s.seats), round: roundNo() + 1, ask: id }, keep), VERSION));
       self.replay = null;
       integrate();
     }
@@ -1234,7 +1645,7 @@
         for (const e of res.entries) {
           if (e.type === 'Join' && e.joinUsername) self.joined.add(e.joinUsername);
           if (e.type === 'Invite' && e.inviteUsername) self.invited.add(e.inviteUsername);
-          if (e.type === 'Application' && e.text) { sess.entries.push(e); fresh++; }
+          if (gameEntry(e)) { sess.entries.push(e); fresh++; }
         }
         netState.textContent = self.outbox && self.outbox.size ? t('game.sending') : '';
         netState.className = 'net-state';
@@ -1276,6 +1687,7 @@
         self.busy = false;
         board.setMovable(-1, []);
         log.replaceChildren();
+        board.highlight(null);
         logRound(roundNo());
         for (const item of rep.history.slice(-60)) eventsToLog(item.action, item.events, item.c);
         board.render(rep.state);
@@ -1347,7 +1759,13 @@
     function noticeNews(rep) {
       const says = (rep.timeline || []).filter(x => x.kind === 'say' && x.author !== ME).length;
       const left = (rep.left || []).filter(u => u !== ME);
-      if (!self.newsInit) { self.newsInit = true; self.saysSeen = says; self.leftSeen = new Set(left); return; }
+      const ruleLines = (rep.timeline || []).filter(x => x.kind === 'rules');
+      if (!self.newsInit) { self.newsInit = true; self.saysSeen = says; self.leftSeen = new Set(left); self.rulesSeen = ruleLines.length; return; }
+      if (ruleLines.length > (self.rulesSeen || 0)) {
+        const last = ruleLines[ruleLines.length - 1];
+        if (last.author !== ME) { Sound.play('chat'); toast(t('game.rulesChangedToast', { name: last.author, list: (last.changed || []).join(', ') }), 'info', 6000); }
+      }
+      self.rulesSeen = ruleLines.length;
       if (says > self.saysSeen) {
         Sound.play('chat');
         if (chatList) { const box = chatList.closest('.chat'); box.classList.remove('ping'); void box.offsetWidth; box.classList.add('ping'); }
@@ -1446,7 +1864,7 @@
           sess.entries = [];
           for (const e of res.entries) {
             if (e.type === 'Join' && e.joinUsername) self.joined.add(e.joinUsername);
-            if (e.type === 'Application' && e.text) sess.entries.push(e);
+            if (gameEntry(e)) sess.entries.push(e);
           }
           for (const e of local) sess.entries.push(e);
           await integrate();
@@ -1526,11 +1944,12 @@
     const chatId = url.searchParams.get('chatId');
     if (chatId && Net.available) openOnline(chatId);
     else renderHome();
-    if (S.PEERGOS) { loadRemoteSettings(); loadRemoteGames(); loadRemoteKnown(); }
+    if (S.PEERGOS) { loadRemoteSettings(); loadRemoteGames(); loadRemoteKnown().then(() => purgeRemoved()); }
     root.addEventListener('beforeunload', () => { settingsDoc.flushNow(); gamesDoc.flushNow(); knownDoc.flushNow(); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden && screen === 'home' && Net.available) loadOnlineList(); });
   }
 
-  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame, bannerLog };
+  L.App = { boot, settings: () => settings, set, THEMES, SPEED, get game() { return game; }, openSettings, openNotes, renderHome, quickGame, bannerLog,
+    known: () => knownOnline, purgeRemoved }; // the last two for the tests
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })(window);

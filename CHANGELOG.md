@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 – test feedback round 6
+- **Smarter computer players, explained** (Settings → Play):
+  - *Easy* plays mostly by chance and rarely captures – a fair opponent for small children.
+  - *Normal* looks at its own move: it captures, runs from danger, uses safe squares, brings tokens out and home.
+  - *Hard* thinks ahead. It weighs every move by everybody's chances to win, using strategies that work with every rule
+    set: who leads the race, which tokens are in danger and from whom, what the next player may roll. It goes for a
+    player who is about to win, chases when behind, plays safe when ahead, and does not waste a turn on a token that
+    cannot change the outcome (e.g. it chases the last token of a player who is about to win instead of moving a token
+    in its home column).
+- **Numbered rules** (1–10) in Settings, the New game dialog and *How to play*, so players can refer to them.
+- **Rule sets**: *Standard rules* and the Czech classic *Člověče, nezlob se!* built in; save your own sets under any
+  name and switch with one click.
+- **Rules can change until the first roll** of a game; the first roll locks them. Online, the host can switch rule sets
+  or single rules, and everybody sees which rules (numbers) changed. With the host's option *Let players agree on the
+  rules* (on by default; Settings → Play and the *Play with friends* dialog) the other players can agree, disagree or
+  suggest a rule set; when a computer player begins, the host starts the game with the die.
+- **The moves list says what happened** ("rolled 6 – brought a token out", "moved 4 squares", "into the home column",
+  "brought a token home") instead of token numbers the board does not show. Point at a line (or tap it) to see that
+  move on the board.
+- **Deleting a running online game** from your list now tells the others (like *Leave game*): they see "… left the
+  game" and the host's computer plays that colour; if the host deletes it, the game ends for everybody. Before, the
+  game just stopped for them. Your copy of the game's chat is deleted in Peergos a week later – Peergos passes your
+  messages to the others only from that copy, so deleting it at once would lose the message (checked on a real Peergos
+  server).
+- When a player with an older version deletes a game, the host's Peergos marks that player as removed from the game's
+  chat; the app now reads that as leaving the game (message, sound, the computer plays that colour).
+- Turn texts say "Computer" without the level; the level stays in the players list and the game description.
+- The die is a bright white die on every theme, with a soft light glow on the dark ones.
+- Clearer waiting text: when the host's app is closed, the game goes on as soon as it is open again – nothing is lost.
+- Czech: "v cíli" (home) instead of "v domečku" (yard) in two texts.
+- Online games stay compatible with 0.6.0 (no new protocol version).
+
 ## 0.6.0 – test feedback round 5
 - Rule "a 6 must bring a token out" with "one token per square": a 6 right after the 6 that brought a token onto the
   empty start square no longer sends that token home – you move a token on the board instead (the new one can move

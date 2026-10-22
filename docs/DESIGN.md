@@ -13,7 +13,7 @@ assets/css/app.css      layout + themes (CSS variables per theme)
 assets/js/version.js    app version (must match the manifest; the release script checks)
 assets/js/i18n.js       English + Czech strings
 assets/js/rules.js      board geometry and the pure game engine (Node + browser)
-assets/js/ai.js         computer players (Easy / Normal / Hard)
+assets/js/ai.js         computer players (Easy / Normal / Hard – see "Computer players")
 assets/js/protocol.js   online protocol: encode/decode messages, replay a chat log into a game state
 assets/js/storage.js    settings + saved games: Peergos data folder, localStorage cache
 assets/js/net.js        Peergos chat API wrapper (create, list, read, send, delete)
@@ -51,11 +51,49 @@ tools/make_release.py   builds releases/Ludo4Peergos-v<ver>.zip + source zip, ch
 - Settings are the one source of rules and speed for new games: the New game dialog starts from them and saves back.
 - Legacy option `selfKick` (0.2.0, own tokens only, safe squares still protect) stays in the engine so old games replay
   the same way; Settings turn a saved `selfKick` into `onePerSquare`.
-- Rules and speed belong to the game (`setup.rules`, `setup.speed`) and never change while it runs; Settings only
-  holds the defaults for new games.
+- Rules and speed belong to the game (`setup.rules`, `setup.speed`); Settings only holds the defaults for new games.
+  0.7.0: until the first roll of a round the rules can still change (a local game: the player; online: the host, see
+  the protocol); the first roll locks them.
+- Numbers (0.7.0, `Rules.RULE_ORDER` / `ruleNo`, never reorder – a new rule gets the next number): 1 `enterOn`,
+  2 `mustEnter`, 3 `threeTries`, 4 `sixBonus`, 5 `threeSixes`, 6 `captureBonus`, 7 `finishBonus`, 8 `onePerSquare`,
+  9 `safeSquares`, 10 `endMode`, 11 `selfKick` (old games only). `Rules.changedRules(a, b)` lists the numbers that play
+  differently (`effectiveRules`: before 0.5.0, safe squares did nothing together with one token per square).
+- Rule sets (0.7.0, app.js): built-in `standard` (the defaults) and `czech` – "Člověče, nezlob se!" as the common Czech
+  editions describe it (rules sheets of Alza and EFKO, checked 2026-10-22; a Piatnik sheet lists the extra roll after a 6
+  only as an optional agreement): enter with a 6, a 6 rolls again (no third-six
+  limit), three tries, captures give no extra roll, no extra roll for reaching home, one token per square with own tokens
+  blocking, no safe squares, the first home wins. Own sets live in `settings.ruleSets` (`[{id, name, rules}]`, the
+  numbered rules only, at most 20). A setup records where its rules came from: `rulesSet` (built-in id) or `rulesName`.
 
 Positions: `-1` = yard, `0..50` = main track relative to the colour's start square, `51..55` = home column,
 `56` = home (finished). Track cell of a token = `(START[colour] + rel) % 52`.
+
+## Computer players (`ai.js`, 0.7.0)
+All three levels get the legal moves from the engine (`Rules.legalMoves`) and look at positions through it (captures,
+safe squares, extra rolls, entering, end of game), so they play every rule set by its rules.
+- **Easy** – 60 % a random move, otherwise the token that gets furthest, avoiding captures. A child-like player
+  (captures when it sees one, likes to bring tokens out) beats it about two games in three.
+- **Normal** – the one-move heuristic `score()` (0.6.0's Hard): capture (more for advanced tokens), bring out, home
+  column and home, safe squares, progress, escaping / avoiding squares within 1–6 of an opponent, not stacking, chasing.
+- **Hard** – an evaluation of the whole position plus a look at the next rolls:
+  - *race* (`raceOf`): the expected rolls each colour needs to get home if nobody interferes – an exact dynamic
+    programme (`exactTable`, ~20 ms once per rule variant) for the three tokens furthest from home, with the exact roll
+    at the end, the entering roll and (one token per square) own tokens blocking; turned into turns with the rules'
+    rolls per turn and three tries;
+  - *win chances* (`utility`): race times compared pairwise (logistic, variance from the remaining rolls), the player to
+    move has a head start; "first home wins" → my chance to win, "all places" → expected share of opponents beaten;
+  - *danger* (`hitChance`): for every token on the track, the chance it is captured before its owner moves again –
+    exact rolls 1–6, 6-then-the-rest with a bonus roll, entering onto a start square, a 6 that must bring a token out,
+    safe squares – in turn order; `evaluate` = win chances + Σ chance × (win chances after that capture). This is what
+    values chasing the last token of a player about to win and keeping its own leading token out of reach;
+  - *look-ahead* (`lookahead`, depth 2): the next player rolls 1–6 and plays its best reply by the same evaluation; in a
+    two-player game (or after my bonus roll) my next roll is looked at too. ~0.5–1 ms a move (max ~60 ms) in Node.
+  - the one-move heuristic is blended in with a tiny weight (`TUNE.blend`) for tactics the evaluation is blind to.
+  - Measured (fixed dice, thousands of games): Hard beats Normal 57 % (standard rules) / 58 % (Czech rules) of
+    two-player games and wins 28.6 % of four-player games against three Normal players (25 % = even); in four-player
+    Czech games (no safe squares, many captures) it is about even with Normal. Unit tests keep five positions where Hard
+    must not make a dumb move (e.g. chase the last token of a player about to win instead of moving a token in the home
+    column – the move Normal makes there).
 
 ## Online protocol (chat messages)
 Text of each chat message: `L4P1 ` + base64url(UTF-8 JSON). JSON always has `v` (protocol 1), `a` (app version),
@@ -63,11 +101,11 @@ Text of each chat message: `L4P1 ` + base64url(UTF-8 JSON). JSON always has `v` 
 
 | kind | sent by | fields |
 |---|---|---|
-| `setup` | host (chat owner) | `seats[4]` (`null` or `{kind:'human'|'bot', user, level, name}`), `rules`, `first`, `speed`, `round`, `ask` (the new-round question it answers) |
+| `setup` | host (chat owner) | `seats[4]` (`null` or `{kind:'human'|'bot', user, level, name}`), `rules`, `first`, `speed`, `round`, `ask` (the new-round question it answers); 0.7.0: `agree` (players may agree on the rules), `rulesSet` / `rulesName` (where the rules come from), `replaces` (id of the setup whose rules it changes before the first roll) |
 | `move` | the player whose turn it is (host for computer seats) | `n` (move number), `c` (colour), `r` (roll), `t` (token or -1) |
 | `resign` | a human player (0.1/0.2 apps) | `c`, `after` (their move counter when resigning) – this game only |
 | `leave` | a human player | `c`, `after` – leaves the whole chat (all rounds); from the host it ends the game |
-| `say` | anyone | `text` (short chat line / emoji) |
+| `say` | anyone | `text` (short chat line / emoji); 0.7.0: `rulesOk` (true/false: agrees with the rules of game `g`), `offer` (`{rules, rulesSet?, rulesName?}`: a suggested rule set) – the text says the same for older apps |
 | `restartAsk` | a human player | asks for a new round of the current game `g` |
 | `restartVote` | a human player | `ask` (id of the question), `yes` (false closes the question) |
 
@@ -92,14 +130,38 @@ that understands it (`setup` and `leave` = 3, everything else = 2), so a 0.3.0 p
 rules use `mustEnter` or `onePerSquare`+`protectOwn` (a 0.3.0 app would replay those differently). Protocol 5 (app 0.5.0):
 a setup with `onePerSquare` + `safeSquares` + `safeBlock`. Protocol 6 (app 0.6.0): `mustEnter` + `onePerSquare` + `enterGrace`.
 
-Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns.
+Changing the rules before the first roll (0.7.0): the host sends a new `setup` of the same round with the same seats,
+`first`, `speed` (and `ask`, `agree`) and `replaces` = the current setup's id. `replay` treats a replaced setup as no
+round of its own, puts a `{kind: 'rules', changed: [numbers]}` line into the timeline instead of a second round line,
+and lets a `resign`/`leave` sent for the replaced setup count for the new one. The new setup is simply the last one, so
+apps of 0.6.0 play it the same way (they only show the round line twice) – no new protocol version. If a player's move
+for the replaced setup crosses the change, it is ignored (the change wins; the app only offers it while no move is
+known). `votes` (`{user: true|false}`) are the players' last `rulesOk` for the current setup. With `agree` set and a
+computer player to begin, the host's app waits for the host to start the game with the die (phase `start`, or after
+the think time with "roll automatically"); without `agree` the computer starts at once.
+
+Deleting an online game from the list (0.7.0): while the user still plays in it, the app first sends `leave` (same as
+**Leave game**) and hides the game (`online-games.json`: `{removed, purge}`); its copy of the chat is deleted
+(`DELETE /peergos-api/v0/chat/<id>`) only a week later (`purgeRemoved` at start). Peergos hands a member's messages to
+the others only from that member's copy (`Messenger.mergeMessages` reads the member's chat mirror), so deleting it at
+once loses every message not merged yet – on a real 1.39 server the `leave` never arrived. When a member's copy is
+gone, the chat OWNER's Peergos client writes a `RemoveMember` entry (`removeUsername`) on its next merge (non-admins
+silently stop reading that member); `replay` treats that entry as a `leave` of that player, handed over after the
+player's last move. That covers players with older apps who delete a game (0.6.0 deleted at once, sending nothing).
+A member who joins and deletes before the owner ever read their log stays "invited" in the owner's view (Peergos
+treats them as a pending member and writes nothing). Before 0.7.0 a delete sent nothing and the others waited for
+ever.
+
+Who runs the computer players online: the host's app. If the host is offline, the game waits on computer turns; nothing
+is lost – every open replays the whole chat.
 
 ## Storage
 - `data/settings.json` – all settings, written ~250 ms after each change (localStorage keeps a copy for an
   instant start; the data folder is the truth and follows the user to other devices).
 - `data/local-games.json` – saved local games (setup + list of actions), the newest 30.
 - `data/online-games.json` – online games this user created or opened (`{chatId: {title, added, opened}}`, deleted
-  ones as `{removed}`), so they stay in the menu even when Peergos' chat lists leave them out.
+  ones as `{removed, purge?}` – `purge`: when to delete the Peergos copy of the chat), so they stay in the menu even
+  when Peergos' chat lists leave them out.
 - `data/user-notes.json`, `data/notes-texts/*.md` – User notes module.
 
 ## Peergos facts this relies on

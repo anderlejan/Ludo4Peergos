@@ -72,6 +72,19 @@
                              // start square, a later 6 enters and sends it home as before.
   });
 
+  // 0.7.0: the visible rules have fixed numbers, so players can refer to them ("rule 2") when they agree on them.
+  // Never reorder – new rules get the next free number. selfKick (11) only shows in games started by 0.2.0.
+  const RULE_ORDER = Object.freeze(['enterOn', 'mustEnter', 'threeTries', 'sixBonus', 'threeSixes', 'captureBonus', 'finishBonus',
+    'onePerSquare', 'safeSquares', 'endMode', 'selfKick']);
+  function ruleNo(key) { const i = RULE_ORDER.indexOf(key); return i < 0 ? null : i + 1; }
+  /** Numbers of the visible rules that differ between two rule sets (sorted). */
+  function changedRules(a, b) {
+    const x = effectiveRules(a), y = effectiveRules(b);
+    return RULE_ORDER.filter(k => x[k] !== y[k]).map(ruleNo);
+  }
+  /** The rules as they play: in games before 0.5.0 (no safeBlock) safe squares did nothing with one token per square. */
+  function effectiveRules(r) { const n = normalizeRules(r); if (n.onePerSquare && !n.safeBlock) n.safeSquares = false; return n; }
+
   function normalizeRules(r) {
     const out = Object.assign({}, DEFAULT_RULES);
     if (r && typeof r === 'object') {
@@ -338,7 +351,7 @@
 
   const Rules = {
     COLORS, START, FINISH, LAST_TRACK, TRACK, TRACK_LEN, HOME_COL, YARD, YARD_SPOTS, CENTER_SPOTS, STARS, SAFE,
-    DEFAULT_RULES, normalizeRules, normalizeSeat, newGame, clone, legalMoves, target, capturesAt, apply, cellOf,
+    DEFAULT_RULES, RULE_ORDER, ruleNo, changedRules, effectiveRules, normalizeRules, normalizeSeat, newGame, clone, legalMoves, target, capturesAt, apply, cellOf,
     trackIndex, isSafeCell, protects, justEnteredGrace, tokensOut, activeColors, nextColor, progress, replay, isThirdSix,
   };
   root.L4P = root.L4P || {};

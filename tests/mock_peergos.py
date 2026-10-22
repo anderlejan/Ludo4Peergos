@@ -8,7 +8,7 @@ Open http://localhost:8801/index.html?username=alice&pgi=t&theme=dark-mode
 It serves assets/ and implements the parts of /peergos-api the app uses:
   /peergos-api/v0/data/<path>   GET / PUT / DELETE (per user, in memory)
   /peergos-api/v0/chat/         POST (create, invites the first maxInvites other users) / GET list
-  /peergos-api/v0/chat/<id>     PUT {text} / DELETE
+  /peergos-api/v0/chat/<id>     PUT {text} / DELETE (a member's DELETE adds a RemoveMember entry, as the owner's Peergos does)
   /peergos-api/v1/chat/         GET list with members
   /peergos-api/v1/chat/<id>     GET ?startIndex=
   /peergos-api/v0/print/        POST (accepted, ignored)
@@ -203,7 +203,12 @@ def make_handler(user):
                 with LOCK:
                     c = CHATS.get(cid)
                     if c:
+                        was = user in c['joined']
                         c['joined'].discard(user)
+                        # as Peergos does (Messenger.mergeMessages): the member's message log is gone, so the chat owner's
+                        # (admin's) client writes a RemoveMember entry; messages not merged before are lost (not modelled)
+                        if was and user != c['owner']:
+                            c['messages'].append({'type': 'RemoveMember', 'author': c['owner'], 'removeUsername': user, 'timestamp': now(), 'messageRef': uuid.uuid4().hex})
                 return self.send(204)
             if p.startswith('/peergos-api/v0/data/'):
                 with LOCK:

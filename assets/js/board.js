@@ -90,6 +90,7 @@
     el('path', { d: starPath(75, 75, 3.6, 1.5), class: 'b-center-star' }, svg);
 
     const trail = el('g', { class: 'b-trail' }, svg);
+    const hlLayer = el('g', { class: 'b-hl' }, svg); // 0.7.0: a move picked in the moves list
     const tokLayer = el('g', { class: 'b-tokens' }, svg);
     const fxLayer = el('g', { class: 'b-fx' }, svg);
 
@@ -172,6 +173,24 @@
       });
     }
 
+    /** 0.7.0: shows one move from the moves list – the squares it went over and a ring where it ended (the token there
+     *  pulses while it still stands on that square). highlight(null) clears it. */
+    function highlight(mv) {
+      while (hlLayer.firstChild) hlLayer.removeChild(hlLayer.firstChild);
+      for (let c = 0; c < 4; c++) for (let i = 0; i < 4; i++) toks[c][i].classList.remove('spot');
+      if (!mv) return;
+      const rels = [];
+      for (let r = mv.from; r < mv.to; r++) if (r >= 0) rels.push(r); // where it came from and the squares passed
+      rels.forEach(rel => {
+        if (rel < 0 || rel >= R.FINISH) return;
+        const [x, y] = R.cellOf(mv.color, rel, mv.token);
+        el('circle', { cx: x * U, cy: y * U, r: 1.3, class: 'hl-dot', style: { fill: pv(mv.color) } }, hlLayer);
+      });
+      const [tx, ty] = R.cellOf(mv.color, mv.to, mv.token);
+      el('circle', { cx: tx * U, cy: ty * U, r: mv.to === R.FINISH ? 3.6 : 6.4, class: 'hl-ring', style: { stroke: pv(mv.color) } }, hlLayer);
+      if (shown && shown.tokens[mv.color] && shown.tokens[mv.color][mv.token] === mv.to) toks[mv.color][mv.token].classList.add('spot');
+    }
+
     function burst(x, y, color) {
       const g = el('g', { class: 'burst', transform: 'translate(' + x * U + ' ' + y * U + ')' }, fxLayer);
       for (let k = 0; k < 10; k++) {
@@ -246,7 +265,7 @@
       return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
     }
 
-    return { svg, render, animate, setMovable, setActive, showTrail, burst, tokenCenter, get shown() { return shown; } };
+    return { svg, render, animate, setMovable, setActive, showTrail, highlight, burst, tokenCenter, get shown() { return shown; } };
   }
 
   root.L4P.Board = { create };

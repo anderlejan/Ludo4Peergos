@@ -14,6 +14,10 @@ What it checks, in Chromium, through the Peergos web UI:
   4. alice creates an online game with Peergos' own friend picker (bob + a computer seat)
   5. bob gets the invitation in the News feed, presses Join, the game opens in his app
   6. both play to the end over the real chat API and end in the same state
+  7. new round; 0.7.0: before its first roll bob disagrees, alice switches rule sets, bob agrees, the roll locks them
+  8. the game stays in bob's list; bob leaves the game
+  9.–11. deleting games: what Peergos leaves (RemoveMember from the owner's client), a 0.7.0 delete of a running game
+     (the "leave" reaches alice), an older app's delete (alice is told from Peergos' RemoveMember)
 """
 import argparse, json, os, sys, time
 from playwright.sync_api import sync_playwright
@@ -288,6 +292,8 @@ def main():
         ok('alice heard the chat sound', 'chat' in fa.evaluate('window.__snd'))
         shot(a, 'game-6-alice-end')
         print('7. new round in the same chat (bob asks, alice agrees, her app starts it)', flush=True)
+        for f in (fa, fb):  # 0.7.0: nobody rolls by itself, so the players can talk about the rules first
+            f.evaluate("L4P.App.set({autoRoll: false})")
         wait(lambda: fb.evaluate("!!document.getElementById('btn-rematch')"), 'the winner dialog for bob', 30)
         fb.evaluate("document.getElementById('btn-rematch').click()")
         wait(lambda: fa.evaluate("!!document.getElementById('btn-agree')"), 'alice to be asked', 120)
@@ -296,6 +302,30 @@ def main():
         wait(lambda: fa.evaluate('L4P.App.game.replay.rounds.length') == 2 and fb.evaluate('L4P.App.game.replay.rounds.length') == 2, 'round 2 on both sides', 180)
         ok('round 2 started on both sides', True)
         ok('chat kept across rounds', 'Hello from bob' in fb.inner_text('.side-right') and 'Round 2' in fb.inner_text('.side-right'))
+        print('7b. before the first roll of round 2: bob disagrees, alice switches to the Czech rules, bob agrees', flush=True)
+        ok('round 2 keeps "let players agree on the rules"', fa.evaluate('L4P.App.game.replay.setup.agree') is True)
+        wait(lambda: fb.evaluate("!!document.getElementById('btn-rules-disagree')"), 'bob\'s agree / disagree buttons', 120)
+        fb.evaluate("document.getElementById('btn-rules-disagree').click()")
+        wait(lambda: 'Not agreed: ' + bob in fa.inner_text('.info-box'), 'alice to see that bob disagrees', 180)
+        ok('alice sees that bob disagrees (over the real chat)', True)
+        fa.evaluate("document.getElementById('btn-change-rules').click()")
+        fa.wait_for_selector('.dlg-rules')
+        fa.click('.dlg-rules .set-chip[data-set="czech"] .set-pick')
+        fa.click('#btn-apply-rules')
+        wait(lambda: fb.evaluate("L4P.App.game.replay.setup.rulesSet") == 'czech', 'bob to get the Czech rules', 180)
+        ok('bob plays the new rules, still round 2', fb.evaluate('L4P.App.game.replay.rounds.length') == 2 and fb.evaluate('L4P.App.game.state.rules.onePerSquare') is True)
+        wait(lambda: 'switched to' in fb.inner_text('.side-right'), 'the rules line in bob\'s chat', 60)
+        ok('bob\'s chat says which rules changed', True)
+        fb.evaluate("document.getElementById('btn-rules-agree').click()")
+        wait(lambda: 'Everybody agrees' in fa.inner_text('.info-box'), 'alice to see that everybody agrees', 180)
+        ok('alice sees that everybody agrees', True)
+        shot(a, 'game-7b-rules-agreed')
+        for f in (fa, fb):
+            f.evaluate("L4P.App.set({autoRoll: true})")
+        fa.evaluate("() => { if (L4P.App.game.phase === 'start') document.getElementById('die').click(); }")
+        wait(lambda: fa.evaluate('L4P.App.game.state.n') >= 1, 'the first roll of round 2', 180)
+        wait(lambda: fa.evaluate("!document.getElementById('btn-change-rules')"), 'the rules to lock', 60)
+        ok('the first roll locks the rules', True)
         fa.evaluate("document.getElementById('btn-game-rules').click()")
         ok('How to play shows the rules of this game', 'Rules of this game' in fa.inner_text('.dlg-help'))
         shot(a, 'game-8-rules')
@@ -330,6 +360,75 @@ def main():
         ok('alice\'s app plays bob\'s colour after he left', True)
         shot(a, 'game-10-alice-after-leave')
         shot(b, 'game-11-bob-left')
+
+        print('9. bob deletes the game from his list: what does Peergos itself show alice?', flush=True)
+        types_before = fa.evaluate("s => L4P.Net.read(s, 0).then(r => r.entries.map(e => e.type + ':' + (e.author || e.joinUsername || e.removeUsername || '')))", chat)
+        fb.evaluate("s => [...document.querySelectorAll('#games-list .game-card[data-chat]')].find(e => e.dataset.chat === s).querySelector('.icon-btn').click()", chat)
+        fb.wait_for_selector('.dlg-small .btn.primary')
+        ok('bob (who already left) is asked plainly', 'Remove this online game' in fb.inner_text('.dlg-small'), fb.inner_text('.dlg-small')[:200])
+        fb.click('.dlg-small .btn.primary')
+        wait(lambda: fb.evaluate("s => ![...document.querySelectorAll('#games-list .game-card[data-chat]')].some(e => e.dataset.chat === s)", chat), 'the game to leave bob\'s list', 60)
+        ok('the game is gone from bob\'s list', True)
+        time.sleep(20)
+        types_after = fa.evaluate("s => L4P.Net.read(s, 0).then(r => r.entries.map(e => e.type + ':' + (e.author || e.joinUsername || e.removeUsername || '')))", chat)
+        new = types_after[len(types_before):]
+        kinds = sorted(set(t.split(':')[0] for t in types_after))
+        print('    alice\'s chat entry types: %s; new after bob\'s delete: %s' % (kinds, new[:10]), flush=True)
+        ok('recorded what Peergos shows after a delete (see the line above)', True)
+
+        def new_game_with_bob(label):
+            close_app(a)
+            fa2 = launch(a)
+            fa2.evaluate("L4P.App.set({anim: 'instant', autoRoll: true, autoMove: true, sound: false, pollMs: 600, agreeRules: false})")
+            fa2.click('#act-friends')
+            fa2.wait_for_selector('.dlg-new')
+            fa2.click('.dlg-new .btn.primary')
+            wait(lambda: a.evaluate("(() => { const c = " + VUE + ".find('addFriends'); if (c) { window.__add = c; return true; } return false; })()"), 'the Peergos friend picker (' + label + ')', 60)
+            a.evaluate("u => { window.__add.targetUsernames = [u]; window.__add.addFriends(); window.__add.applyChange(); }", bob)
+            wait(lambda: fa2.evaluate("!!(L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup)"), 'the game for alice (' + label + ')', 120)
+            cid = fa2.evaluate("L4P.App.game.sess.chatId")
+            close_app(b)
+            goto_view(b, 'Newsfeed', 'joinConversation', '__feed')
+            def join_btn():
+                b.evaluate("() => { if (window.__feed.refresh) window.__feed.refresh(); }")
+                time.sleep(3)
+                return b.evaluate("[...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Join')")
+            wait(join_btn, 'the invitation (' + label + ')', 240, 0.1)
+            b.evaluate("[...document.querySelectorAll('button')].filter(x => x.textContent.trim() === 'Join').pop().click()")
+            fb2 = wait(lambda: (lambda f: f if f and f.evaluate("c => !!(window.L4P && L4P.App && L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup && L4P.App.game.sess.chatId === c)", cid) else None)(app_frame(b)), 'the game for bob (' + label + ')', 180)
+            fb2.evaluate("L4P.App.set({anim: 'instant', autoRoll: true, autoMove: true, sound: false, pollMs: 600})")
+            # play until alice has seen at least one move of bob (his message log has been read once)
+            def bob_moved():
+                for f in (fa2, fb2):
+                    f.evaluate("() => { const g = L4P.App.game; if (g.phase === 'pick') { const t = document.querySelector('.tok.pickable'); if (t) t.dispatchEvent(new MouseEvent('click', {bubbles: true})); } }")
+                return fa2.evaluate("u => L4P.App.game.replay.history.some(h => h.author === u)", bob)
+            wait(bob_moved, 'a move of bob at alice (' + label + ')', 300, 1)
+            fb2.evaluate("L4P.App.set({autoRoll: false})")
+            return fa2, fb2, cid
+
+        print('10. bob (0.7.0) deletes a RUNNING game: the "leave" reaches alice', flush=True)
+        fa2, fb2, chat2 = new_game_with_bob('10')
+        fb2.evaluate("document.querySelector('.game-actions .btn:last-child').click()")
+        wait(lambda: fb2.evaluate("s => [...document.querySelectorAll('#games-list .game-card[data-chat]')].some(e => e.dataset.chat === s)", chat2), 'the game in bob\'s list', 90)
+        fb2.evaluate("s => [...document.querySelectorAll('#games-list .game-card[data-chat]')].find(e => e.dataset.chat === s).querySelector('.icon-btn').click()", chat2)
+        fb2.wait_for_selector('.dlg-small .btn.primary')
+        ok('bob is told that the others will be told', 'the others are told' in fb2.inner_text('.dlg-small'), fb2.inner_text('.dlg-small')[:200])
+        fb2.click('.dlg-small .btn.primary')
+        wait(lambda: fb2.evaluate("s => ![...document.querySelectorAll('#games-list .game-card[data-chat]')].some(e => e.dataset.chat === s)", chat2), 'the game to leave bob\'s list', 120)
+        ok('bob\'s copy of the chat is kept for now (deleted a week later)', fb2.evaluate("s => L4P.Net.listGames().then(l => l.some(c => c.chatId === s))", chat2) is True)
+        wait(lambda: bob + ' left the game' in fa2.inner_text('.side-right'), 'alice to see that bob left (10)', 240)
+        ok('alice sees "bob left the game" after bob deleted the running game', True)
+        shot(a, 'game-12-alice-bob-deleted')
+        close_app(a)
+
+        print('11. bob with an OLDER app deletes a running game (no "leave"): Peergos\' RemoveMember tells alice', flush=True)
+        fa3, fb3, chat3 = new_game_with_bob('11')
+        st = fb3.evaluate("s => L4P.Net.remove(s)", chat3)  # what 0.6.0 did on delete (same call, no "leave" before it)
+        ok('the old way of deleting (DELETE of the chat copy) worked', st is True, st)
+        wait(lambda: bob + ' left the game' in fa3.inner_text('.side-right'), 'alice to see that bob left (11)', 300)
+        ok('alice sees "bob left the game" (from Peergos\' RemoveMember)', True)
+        ok('alice\'s computer takes over bob\'s colour', fa3.evaluate("u => L4P.App.game.replay.left.indexOf(u) >= 0", bob))
+        shot(a, 'game-13-alice-old-delete')
         for u in (alice, bob):
             ok('no app script errors for ' + u, not errors[u], errors[u][:5])
             pe = pages[u].evaluate('window.__pgErrors || []')
