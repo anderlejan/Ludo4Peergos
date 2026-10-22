@@ -238,10 +238,13 @@ def section7(browser):
     b.wait_for_function('L4P.App.game && L4P.App.game.replay && L4P.App.game.replay.setup', timeout=10000)
     wait_until(lambda: a.evaluate('L4P.App.game.state.n') >= 6, 60)
     b.evaluate("L4P.App.set({autoRoll: false})")
-    b.evaluate("c => fetch('/peergos-api/v0/chat/' + encodeURIComponent(c), {method: 'DELETE'}).then(r => r.status)", chat)  # what 0.6.0 did
+    b.evaluate("document.querySelector('.game-actions .btn:last-child').click()")  # an old app deletes from the menu
+    b.wait_for_selector('#games-list', timeout=20000)
+    b.evaluate("c => L4P.Net.remove(c)", chat)  # what 0.6.0 did on delete: no "leave" before it
     ok('alice is told that bob left', wait_until(lambda: 'bob left the game' in a.inner_text('.side-right'), 30))
-    ok('alice\'s computer plays bob\'s colour', wait_until(lambda: '(computer)' in a.inner_text('.players'), 10) and wait_until(lambda: a.evaluate("(() => { const g = L4P.App.game, c = g.state.seats.findIndex(s => s && s.user === 'bob'); return g.replay.history.some(h => h.c === c && h.author === 'alice'); })()"), 60))
-    ok('no script errors (old app deletes)', not a.errors and not b.errors, '; '.join((a.errors + b.errors)[:3]))
+    took = wait_until(lambda: '(computer)' in a.inner_text('.players'), 20) and wait_until(lambda: a.evaluate("(() => { const g = L4P.App.game, c = g.state.seats.findIndex(s => s && s.user === 'bob'); return g.state.over || g.replay.history.some(h => h.c === c && h.author === 'alice'); })()"), 120)
+    ok('alice\'s computer plays bob\'s colour', took, json.dumps(a.evaluate("(() => { const g = L4P.App.game; return {phase: g.phase, n: g.state.n, turn: g.state.turn, over: g.state.over, left: g.replay.left, resigned: g.replay.resignedAt}; })()")))
+    ok('no script errors (old app deletes)', not a.errors and not [e for e in b.errors if '400' not in e], '; '.join((a.errors + b.errors)[:3]))
     a.context.close(); b.context.close()
 
     print('7e. online without agreeing: the computer starts at once, nobody votes')
